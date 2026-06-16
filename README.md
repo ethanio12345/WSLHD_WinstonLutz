@@ -21,17 +21,18 @@ template.
 ```bash
 # 1. Copy and edit the config
 cp machines.yaml.example machines.yaml
-# Edit machines.yaml: set DICOM roots, output path, machine details
+# Edit machines.yaml: set DICOM roots, per-machine output_root, machine details
 
-# 2. Ensure host directories are readable by UID 1000
-sudo chown -R 1000:1000 /mnt/hospital/RT_DICOM /mnt/hospital/RT_Results /mnt/hospital/RT_Assets
-
-# 3. Start the stack
+# 2. Start the stack
 docker compose up -d
 ```
 
-The app is reachable at `http://<host>:80/` (Caddy reverse proxy with IP
-allowlist for RFC1918 ranges).
+The app is reachable at `http://<host>:8080/wl/` (Caddy reverse proxy on port
+8080 with path-based routing and IP allowlist for RFC1918 ranges).
+
+> If behind a corporate proxy, ensure `no_proxy` and `NO_PROXY` env vars
+> include the Caddy and app service hostnames to bypass the proxy for
+> internal container networking.
 
 ### Local development
 
@@ -56,9 +57,9 @@ uv run streamlit run app.py
 See [`docs/CONFIGURATION.md`](docs/CONFIGURATION.md) for the full schema. Key
 sections:
 
-- **`machines`**: one entry per linac, each with `display_name` and
-  `dicom_roots` (paths to DICOM directories — `winston_lutz` and/or `catphan`)
-- **`output.root`**: where the paired `.xlsx`/`.xltx` files are written
+- **`machines`**: one entry per linac, each with `display_name`,
+  `dicom_roots` (paths to DICOM directories — `winston_lutz` and/or `catphan`),
+  and `output_root` (per-machine output directory)
 - **`analysis_defaults.winston_lutz`**: centre-wide WL pylinac parameters
   (`bb_size_mm`, `machine_scale`, `tolerance_mm`, and optional params)
 - **`analysis_defaults.catphan`**: centre-wide CatPhan pylinac parameters
@@ -66,31 +67,13 @@ sections:
   params) — required if any machine has `catphan` configured
 - **`assets`**: paths to the Fry meme and logo
 
-## Host file ownership
-
-The Docker container runs as **UID 1000** (`appuser`). All bind-mounted host
-directories and files must be readable by UID 1000:
-
-```bash
-# Config file
-sudo chown 1000:1000 machines.yaml
-
-# Network shares (read-only mounts still need read permission)
-sudo chown -R 1000:1000 /mnt/hospital/RT_DICOM
-```
-
-If the container can't read `machines.yaml`, it will refuse to start with a
-clear permission error.
-
 ## Updating the Fry meme
 
 The Fry meme lives at the path specified by `assets.fry_meme_path` in
-`machines.yaml`. In Docker, this is bind-mounted from the hospital assets
-share:
+`machines.yaml`. In Docker, this is bind-mounted from the host:
 
-1. Replace the image file on the network share
-   (e.g. `/mnt/hospital/RT_Assets/fry_money.png`)
-2. Restart the container: `docker compose restart streamlit`
+1. Replace the image file at the bind-mounted host path
+2. Restart the container: `docker compose restart winston_lutz`
 
 No image rebuild is required — the bind-mount overrides the baked-in default.
 

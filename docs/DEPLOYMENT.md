@@ -4,11 +4,14 @@
 
 | Container path | Host path | Mode | Purpose |
 |----------------|-----------|------|---------|
-| `/data` | `/mnt/hospital/RT_DICOM` | `:ro` | DICOM share (read-only) |
-| `/out` | `/mnt/hospital/RT_Results` | `:rw` | Output share (xlsx/xltx writes) |
+| `/mnt/va_transfer_ro` | `/mnt/va_transfer_ro` | `:ro` | DICOM share (read-only, top-level mount covers all machines) |
+| `/mnt/va_transfer_physics_qa` | `/mnt/va_transfer_physics_qa` | `:rw` | Output share (top-level mount covers all machines' output_roots) |
 | `/app/machines.yaml` | `./machines.yaml` | `:ro` | Config (editable without rebuild) |
 | `/app/templates` | `./templates` | `:ro` | xltx template (editable without rebuild) |
-| `/assets` | `/mnt/hospital/RT_Assets` | `:ro` | Fry meme, logo |
+| `/app/assets` | `./assets` | `:ro` | Fry meme, logo |
+
+Each machine's `dicom_roots` and `output_root` in `machines.yaml` are subdirectories of
+these top-level mounts (e.g. `/mnt/va_transfer_ro/05 LA2/DICOMRT/WinstonLutz`).
 
 ## IP allowlist (Caddy)
 
@@ -34,11 +37,11 @@ All logs go to stdout (Docker convention):
 # All services
 docker compose logs -f
 
-# Streamlit only
-docker compose logs -f streamlit
+# App only
+docker compose logs -f winston_lutz
 
 # Last 100 lines
-docker compose logs --tail 100 streamlit
+docker compose logs --tail 100 winston_lutz
 ```
 
 Analysis failures log the full traceback via `logging.exception` — visible in
@@ -48,27 +51,28 @@ Analysis failures log the full traceback via `logging.exception` — visible in
 
 ### 1. Permission denied on startup
 
-**Symptom:** `Cannot read /app/machines.yaml — ensure host file is readable by UID 1000`
+**Symptom:** `Cannot read /app/machines.yaml`
 
-**Cause:** The container runs as UID 1000 (`appuser`). If `machines.yaml` on
-the host is owned by root with mode 0600, the container can't read it.
+**Cause:** The container runs as root (UID 0). The CIFS share has
+`uid=0,dir_mode=0755` so files inside `/mnt/va_transfer_*` are owned by root
+and readable. However, `machines.yaml` on the host filesystem must still be
+world-readable.
 
 **Fix:**
 ```bash
-sudo chown 1000:1000 machines.yaml
 sudo chmod 644 machines.yaml
 ```
 
 ### 2. Mount missing
 
-**Symptom:** `Output root /out does not exist — check the docker-compose volume mount`
+**Symptom:** `Output root ... does not exist — check the docker-compose volume mount`
 
 **Cause:** The output share isn't mounted, or the host path doesn't exist.
 
 **Fix:** Verify the volume mount in `docker-compose.yml` and that the host
 directory exists:
 ```bash
-ls -la /mnt/hospital/RT_Results
+ls -la /mnt/va_transfer_physics_qa
 ```
 
 ### 3. MyQA import failure
@@ -86,14 +90,14 @@ removed or renamed.
 
 ### 4. DICOM root not found
 
-**Symptom:** `Machine LA2: DICOM root /data/LA2/WinstonLutz does not exist`
+**Symptom:** `Machine LA2: DICOM root /mnt/va_transfer_ro/05 LA2/DICOMRT/WinstonLutz does not exist`
 
 **Cause:** The DICOM share isn't mounted, or the machine's subdirectory
 doesn't exist yet.
 
 **Fix:** Verify the mount and directory structure:
 ```bash
-docker compose exec streamlit ls /data/LA2/WinstonLutz
+docker compose exec winston_lutz ls "/mnt/va_transfer_ro/05 LA2/DICOMRT/WinstonLutz"
 ```
 
 ### 5. CatPhan template missing
@@ -135,10 +139,10 @@ To enable CatPhan for a machine:
 1. Add `catphan:` under that machine's `dicom_roots` in `machines.yaml`
 2. Add the `analysis_defaults.catphan` section
 3. Ensure `templates/catphan_504.xltx` exists (run the generator if not)
-4. Restart the container: `docker compose restart streamlit`
+4. Restart the container: `docker compose restart winston_lutz`
 
-The CatPhan output path follows the same deep layout as WL:
-`/out/<CATEGORY>/<DISPLAY>/Pylinac/CatPhan/<MACHINE>_CP_<RUNFOLDER>/`
+The CatPhan output path follows the same layout as WL:
+`<machine.output_root>/CatPhan/<MACHINE>_CP_<RUNFOLDER>/`
 
 ## Escalation paths
 

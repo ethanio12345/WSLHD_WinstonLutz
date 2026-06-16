@@ -7,7 +7,6 @@ schema. This document describes every field.
 
 ```yaml
 machines:             # map of machine key → machine config (required)
-output:               # output directory config (required)
 analysis_defaults:    # centre-wide analysis defaults (required)
 assets:               # asset paths (required)
 ```
@@ -23,6 +22,7 @@ requires:
 | `dicom_roots` | dict | yes | Module-keyed paths; at least one module required per machine |
 | `dicom_roots.winston_lutz` | str (path) | optional | Container path to the WL DICOM directory |
 | `dicom_roots.catphan` | str (path) | optional | Container path to the CatPhan DICOM directory |
+| `output_root` | str (path) | yes | Per-machine output directory for WL/CatPhan session folders (must exist and be writable) |
 
 `winston_lutz` and `catphan` are each independently optional per machine — a
 machine may have either, both, or (when future modules ship) neither. At least
@@ -36,8 +36,9 @@ machines:
   LA2:
     display_name: "LA2 (TrueBeam)"
     dicom_roots:
-      winston_lutz: /data/LA2/WinstonLutz
-      catphan: /data/LA2/CatPhan
+      winston_lutz: /mnt/va_transfer_ro/05 LA2/DICOMRT/WinstonLutz
+      catphan: /mnt/va_transfer_ro/05 LA2/DICOMRT/CatPhan
+    output_root: /mnt/va_transfer_physics_qa/05 LA2/Pylinac
 ```
 
 ### Multiple machines with mixed modules
@@ -47,16 +48,19 @@ machines:
   LA2:
     display_name: "LA2 (TrueBeam)"
     dicom_roots:
-      winston_lutz: /data/LA2/WinstonLutz
-      catphan: /data/LA2/CatPhan
+      winston_lutz: /mnt/va_transfer_ro/05 LA2/DICOMRT/WinstonLutz
+      catphan: /mnt/va_transfer_ro/05 LA2/DICOMRT/CatPhan
+    output_root: /mnt/va_transfer_physics_qa/05 LA2/Pylinac
   LA3:
     display_name: "LA3 (TrueBeam)"
     dicom_roots:
-      winston_lutz: /data/LA3/WinstonLutz   # WL only
+      winston_lutz: /mnt/va_transfer_ro/05 LA3/DICOMRT/WinstonLutz   # WL only
+    output_root: /mnt/va_transfer_physics_qa/05 LA3/Pylinac
   LA4:
     display_name: "LA4 (Edge)"
     dicom_roots:
-      catphan: /data/LA4/CatPhan             # CatPhan only
+      catphan: /mnt/va_transfer_ro/05 LA4/DICOMRT/CatPhan             # CatPhan only
+    output_root: /mnt/va_transfer_physics_qa/05 LA4/Pylinac
 ```
 
 Each page's dropdown lists only machines with that module configured. The
@@ -73,8 +77,8 @@ global setting, so each machine can write to its own network share.
 | `machines.<key>.output_root` | str (path) | yes | Per-machine output directory (must exist and be writable) |
 
 The app creates `<output_root>/<MODULE>/<MACHINE>_<PREFIX>_<RUNFOLDER>/` per session.
-e.g. `/data/LA2/output/WL/LA2_WL_demo_clinical/`
-     `/data/LA2/output/CatPhan/LA2_CP_2026-06-16_monthly/`
+e.g. `/mnt/va_transfer_physics_qa/05 LA2/Pylinac/WL/LA2_WL_demo_clinical/`
+     `/mnt/va_transfer_physics_qa/05 LA2/Pylinac/CatPhan/LA2_CP_2026-06-16_monthly/`
 
 ## `analysis_defaults.winston_lutz`
 
