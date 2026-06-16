@@ -4,10 +4,15 @@ This module **isolates all pylinac API calls** so that future pylinac major
 versions require changes only here (per design D6 and the container-deployment
 spec's pylinac version-pinning requirement).
 
+Runfolder discovery utilities (``find_newest_runfolder``, ``count_dicoms``,
+``runfolder_mtime``, ``list_runfolders``) now live in :mod:`core.runfolder`
+and are re-exported here for backward compatibility.
+
 Public API:
-    - :func:`find_newest_runfolder`
-    - :func:`count_dicoms`
-    - :func:`runfolder_mtime`
+    - :func:`find_newest_runfolder`  (re-exported from core.runfolder)
+    - :func:`count_dicoms`           (re-exported from core.runfolder)
+    - :func:`runfolder_mtime`        (re-exported from core.runfolder)
+    - :func:`list_runfolders`        (re-exported from core.runfolder)
     - :func:`run_wl_analysis`
     - :func:`load_wl_object`  (lazy init for Advanced mode Detection overlay)
 """
@@ -15,66 +20,17 @@ Public API:
 from __future__ import annotations
 
 import logging
-from pathlib import Path
 from typing import Any
 
 from core.result_types import WLAnalysisResult
+from core.runfolder import (  # re-exported for backward compatibility
+    count_dicoms,
+    find_newest_runfolder,
+    list_runfolders,
+    runfolder_mtime,
+)
 
 logger = logging.getLogger(__name__)
-
-# ---------------------------------------------------------------------------
-# Runfolder discovery
-# ---------------------------------------------------------------------------
-
-#: Glob pattern for DICOM files.  pylinac accepts any extension but the
-#: standard is ``.dcm``.  We also count extensionless files if they parse
-#: as DICOM (some treatment machines export without an extension).
-_DICOM_GLOBS = ("*.dcm", "*.dicom", "*.DCM")
-
-
-def list_runfolders(dicom_root: Path) -> list[Path]:
-    """Return all immediate subdirectories of ``dicom_root`` sorted newest-first.
-
-    Args:
-        dicom_root: A machine's ``winston_lutz`` DICOM root directory.
-
-    Returns:
-        Subdirectories sorted by mtime (newest first). Empty list if the root
-        does not exist or contains no subdirectories.
-    """
-    if not dicom_root.exists():
-        return []
-    subdirs = [p for p in dicom_root.iterdir() if p.is_dir()]
-    return sorted(subdirs, key=lambda p: p.stat().st_mtime, reverse=True)
-
-
-def find_newest_runfolder(dicom_root: Path) -> Path | None:
-    """Return the immediate subdirectory of ``dicom_root`` with the newest mtime.
-
-    Args:
-        dicom_root: A machine's ``winston_lutz`` DICOM root directory.
-
-    Returns:
-        The newest subdirectory by mtime, or ``None`` if no subdirs exist.
-    """
-    folders = list_runfolders(dicom_root)
-    return folders[0] if folders else None
-
-
-def count_dicoms(runfolder: Path) -> int:
-    """Count DICOM files in ``runfolder`` (any of the standard extensions)."""
-    if not runfolder.exists():
-        return 0
-    total = 0
-    for pattern in _DICOM_GLOBS:
-        total += sum(1 for _ in runfolder.glob(pattern))
-    return total
-
-
-def runfolder_mtime(runfolder: Path) -> float:
-    """Return the mtime of ``runfolder`` (for cache-key invalidation)."""
-    return runfolder.stat().st_mtime
-
 
 # ---------------------------------------------------------------------------
 # pylinac wrapper
@@ -394,6 +350,7 @@ __all__ = [
     "ANALYZE_PARAMS",
     "count_dicoms",
     "find_newest_runfolder",
+    "list_runfolders",
     "load_wl_object",
     "run_wl_analysis",
     "runfolder_mtime",

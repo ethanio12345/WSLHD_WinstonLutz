@@ -1,92 +1,38 @@
 """Excel writer — produces paired ``.xltx`` + ``.xlsx`` per Winston-Lutz session.
 
 Implements the ``wl-result-export`` spec:
-- Per-session output folder at ``<output_root>/<MACHINE>/WL/<MACHINE>_WL_<RUNFOLDER>/``
+- Per-session output folder at ``<output_root>/<CATEGORY>/<DISPLAY>/<PYLINAC>/WL/<MACHINE>_WL_<RUNFOLDER>/``
 - ``.xltx`` copied verbatim from ``templates/winston_lutz.xltx``
 - ``.xlsx`` produced by loading the copy, populating 24 named cells +
   ``template_version``, and adding one per-image sheet per ``image_keys[i]``
 - Sheet names sanitised to Excel constraints (≤31 chars, no forbidden chars)
 
+The shared helpers (:func:`set_named_cell`, :func:`sanitise_sheet_name`,
+:func:`build_session_folder`, :func:`copy_template_to_session`) now live in
+:mod:`core.excel_helpers` and :mod:`core.session_io` respectively.
+
 Public API:
-    - :func:`set_named_cell`
-    - :func:`sanitise_sheet_name`
+    - :func:`set_named_cell`        (re-exported from core.excel_helpers)
+    - :func:`sanitise_sheet_name`   (re-exported from core.excel_helpers)
     - :func:`write_session_output`
 """
 
 from __future__ import annotations
 
 import logging
-import re
-import shutil
 from pathlib import Path
 from typing import Any
 
-from openpyxl import Workbook, load_workbook
+from openpyxl import load_workbook
 
+from core.excel_helpers import sanitise_sheet_name, set_named_cell  # re-exported
 from core.result_types import WLAnalysisResult
+from core.session_io import build_session_folder, copy_template_to_session
 
 logger = logging.getLogger(__name__)
 
 #: Current template version stamp (should match the value in build_xltx_template.py).
 TEMPLATE_VERSION = "2026-06"
-
-#: Characters Excel forbids in sheet names.
-_FORBIDDEN_SHEET_CHARS = re.compile(r"[\\\/\?\*\[\]:]")
-
-#: Excel's maximum sheet name length.
-_MAX_SHEET_NAME_LEN = 31
-
-
-# ---------------------------------------------------------------------------
-# Named-cell writer
-# ---------------------------------------------------------------------------
-
-
-def set_named_cell(wb: Workbook, name: str, value: Any) -> None:
-    """Resolve a defined name to its target cell and set the value.
-
-    Args:
-        wb: An openpyxl ``Workbook`` with defined names.
-        name: The defined name (e.g. ``"max_2d_cax_to_bb"``).
-        value: The value to write.
-
-    Raises:
-        KeyError: If ``name`` is not a defined name in the workbook.
-    """
-    defined_names = wb.defined_names
-    if name not in defined_names:
-        raise KeyError(
-            f"Defined name '{name}' not found in workbook. Ensure the xltx template defines it."
-        )
-    dn = defined_names[name]
-    # ``destinations()`` yields (worksheet_title, cell_range) tuples
-    for sheet_title, coord in dn.destinations:
-        wb[sheet_title][coord] = value
-        return  # only set the first destination
-    raise KeyError(f"Defined name '{name}' has no destinations in the workbook.")
-
-
-# ---------------------------------------------------------------------------
-# Sheet name sanitisation
-# ---------------------------------------------------------------------------
-
-
-def sanitise_sheet_name(name: str) -> str:
-    """Sanitise a string for use as an Excel sheet name.
-
-    - Replace ``\\ / ? * [ ] :`` with ``_``
-    - Truncate to 30 chars + ``…`` (total 31) if length exceeds 31
-
-    Args:
-        name: The raw sheet name candidate.
-
-    Returns:
-        A sheet-name-safe string of at most 31 characters.
-    """
-    cleaned = _FORBIDDEN_SHEET_CHARS.sub("_", name)
-    if len(cleaned) <= _MAX_SHEET_NAME_LEN:
-        return cleaned
-    return cleaned[:30] + "…"
 
 
 # ---------------------------------------------------------------------------
@@ -111,32 +57,6 @@ def _serialize_for_excel(val: Any) -> Any:
         except (TypeError, ValueError):
             return str(val)
     return str(val)
-
-
-def _session_folder(
-    output_root: Path,
-    machine_id: str,
-    machine_display_name: str,
-    runfolder_name: str,
-    category: str = "Clinical QA",
-    pylinac_subfolder: str = "Pylinac",
-) -> Path:
-    """Build the per-session output folder path.
-
-    Structure::
-
-        <root>/<category>/<display_name>/<pylinac_subfolder>/WL/<MACHINE>_WL_<RUNFOLDER>
-
-    e.g. ``/out/Clinical QA/LA2 (TrueBeam)/Pylinac/WL/LA2_WL_demo_clinical``
-    """
-    return (
-        Path(output_root)
-        / category
-        / machine_display_name
-        / pylinac_subfolder
-        / "WL"
-        / f"{machine_id}_WL_{runfolder_name}"
-    )
 
 
 def write_session_output(
@@ -166,21 +86,20 @@ def write_session_output(
         The path to the written ``.xlsx`` file.
     """
     runfolder_name = Path(result.runfolder_path).name
-    session_dir = _session_folder(
-        output_root,
-        result.machine_id,
-        machine_display_name,
-        runfolder_name,
-        category,
-        pylinac_subfolder,
-    )
-    session_dir.mkdir(parents=True, exist_ok=True)
-
     base_name = f"{result.machine_id}_WL_{runfolder_name}"
 
-    # 1. Copy the template as .xltx (verbatim)
-    xltx_out = session_dir / f"{base_name}.xltx"
-    shutil.copy(str(template_path), str(xltx_out))
+    # 1. Build session folder + copy template as .xltx (verbatim)
+    session_dir = build_session_folder(
+        output_root=output_root,
+        machine_id=result.machine_id,
+        machine_display_name=machine_display_name,
+        module_dir="WL",
+        runfolder_name=runfolder_name,
+        file_prefix="WL",
+        category=category,
+        pylinac_subfolder=pylinac_subfolder,
+    )
+    xltx_out = copy_template_to_session(template_path, session_dir, base_name)
     logger.info("Copied template to %s", xltx_out)
 
     # 2. Load the copy, populate named cells, add per-image sheets, save as .xlsx
