@@ -1,27 +1,38 @@
+x-app-base: &app-base
+  build: .
+  expose:
+    - "8501"
+  volumes:
+    # DICOM — matches dicom_roots.winston_lutz in machines.yaml
+    - /mnt/va_transfer_ro/LA2/DICOMRT/01 Weekly:/mnt/va_transfer_ro/LA2/DICOMRT/01 Weekly:ro
+    # Output — matches output.root in machines.yaml
+    - /mnt/va_transfer_physics_qa/05 LA2/Pylinac:/mnt/va_transfer_physics_qa/05 LA2/Pylinac:rw
+    # Config
+    - ./machines.yaml:/app/machines.yaml:ro
+    # Templates (updated without rebuild)
+    - ./templates:/app/templates:ro
+    # Assets (overrides baked-in copies for live updates)
+    - ./assets:/app/assets:ro
+  restart: unless-stopped
+
 services:
-  streamlit:
-    build: .
-    expose:
-      - "8501"           # container-internal only; NOT published to host
-    volumes:
-      # DICOM share: read-only (container-deployment spec R2)
-      - /mnt/hospital/RT_DICOM:/data:ro
-      # Output share: read-write (spec R3)
-      - /mnt/hospital/RT_Results:/out:rw
-      # Config: read-only bind-mount (machine-config spec)
-      - ./machines.yaml:/app/machines.yaml:ro
-      # Templates: read-only bind-mount (updated without rebuild)
-      - ./templates:/app/templates:ro
-      # Assets: read-only (Fry meme etc.)
-      - /mnt/hospital/RT_Assets:/assets:ro
-    restart: unless-stopped
+  winston_lutz:
+    <<: *app-base
+
+  # Future modules: copy the pattern above, override expose port
+  # catphan:
+  #   <<: *app-base
+  #   expose: ["8502"]
 
   caddy:
     image: caddy:2
     ports:
-      - "80:80"
+      - "8080:8080"
+    environment:
+      - no_proxy=winston_lutz,catphan,localhost,127.0.0.1,172.19.0.0/16,.local
+      - NO_PROXY=winston_lutz,catphan,localhost,127.0.0.1,172.19.0.0/16,.local
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
     depends_on:
-      - streamlit
+      - winston_lutz
     restart: unless-stopped

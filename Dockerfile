@@ -16,12 +16,7 @@ COPY core/ ./core/
 COPY templates/ ./templates/
 COPY assets/ ./assets/
 
-# Create non-root user (UID 1000, per container-deployment spec R9)
-RUN useradd -m -u 1000 appuser && \
-    mkdir -p /data /out /assets && \
-    chown -R appuser:appuser /app /data /out /assets
-
-USER appuser
+RUN mkdir -p /data /out /assets
 
 EXPOSE 8501
 

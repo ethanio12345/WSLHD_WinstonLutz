@@ -8,12 +8,26 @@
     auto_https off
 }
 
-:80 {
+:8080 {
+    log {
+        output stdout
+    }
+
     # IP allowlist — initial auth mode (container-deployment spec)
     @allowed remote_ip 10.0.0.0/8 172.16.0.0/12 192.168.0.0/16
 
     handle @allowed {
-        reverse_proxy streamlit:8501
+        handle_path /wl/* {
+            reverse_proxy winston_lutz:8501
+        }
+
+        # Future modules — add handle_path blocks here:
+        # handle_path /catphan/* {
+        #     reverse_proxy catphan:8502
+        # }
+
+        # Fallback — serve root at / → Winston Lutz for now
+        reverse_proxy winston_lutz:8501
     }
 
     # Non-allowlisted IPs get 403
@@ -28,24 +42,24 @@
 #
 # rt-qa.hospital.internal {
 #     tls /certs/hospital.crt /certs/hospital.key
-#     reverse_proxy streamlit:8501
+#     reverse_proxy winston_lutz:8501
 # }
 
 # 2. HTTP Basic Authentication:
 #
-# :80 {
+# :8080 {
 #     basic_auth {
 #         ethan <bcrypt-hash>
 #     }
-#     reverse_proxy streamlit:8501
+#     reverse_proxy winston_lutz:8501
 # }
 
 # 3. OIDC via forward_auth (Authelia / Keycloak / etc.):
 #
-# :80 {
+# :8080 {
 #     forward_auth authelia:9091 {
 #         uri /api/verify?rd=https://auth.hospital.internal/
 #         copy_headers Remote-Remote-User Remote-Remote-Groups Remote-Remote-Name Remote-Remote-Email
 #     }
-#     reverse_proxy streamlit:8501
+#     reverse_proxy winston_lutz:8501
 # }
