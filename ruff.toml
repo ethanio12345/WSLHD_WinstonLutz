@@ -1,0 +1,19 @@
+target-version = "py310"
+line-length = 100
+
+[lint]
+# Mirrors the LSD project conventions: pragmatic rule set.
+select = ["E", "W", "F", "I", "N", "UP", "B", "SIM", "C4", "ARG", "RUF"]
+ignore = [
+    "E501",  # line length handled by formatter
+    "E402",  # Streamlit pages often need late imports
+    "N802",  # allow camelCase for pylinac/domain attributes
+    "N803",  # allow camelCase args
+    "N806",  # allow camelCase vars
+    "N815",  # allow camelCase in dataclasses (JSON-schema parity)
+    "N818",  # allow Error suffix flexibility
+]
+
+[lint.per-file-ignores]
+"tests/**" = ["ARG001", "ARG002"]  # unused pytest fixtures/args ok in tests
+"pages/**" = ["ARG001"]  # Streamlit page functions have spec-mandated signatures

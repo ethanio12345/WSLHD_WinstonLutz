@@ -1,0 +1,51 @@
+# Caddyfile — WSLHD Winston-Lutz QA reverse proxy
+#
+# v1 baseline: HTTP + IP allowlist (RFC1918 private ranges).
+# Structured so HTTPS / basic-auth / OIDC can be added later without rewrite.
+# See container-deployment spec: "Caddyfile structured for auth escalation".
+
+{
+    auto_https off
+}
+
+:80 {
+    # IP allowlist — initial auth mode (container-deployment spec)
+    @allowed remote_ip 10.0.0.0/8 172.16.0.0/12 192.168.0.0/16
+
+    handle @allowed {
+        reverse_proxy streamlit:8501
+    }
+
+    # Non-allowlisted IPs get 403
+    respond "Forbidden" 403
+}
+
+# ---------------------------------------------------------------------------
+# Escalation paths (commented; uncomment + adjust when ready)
+# ---------------------------------------------------------------------------
+
+# 1. Real TLS with hospital-provided certificates:
+#
+# rt-qa.hospital.internal {
+#     tls /certs/hospital.crt /certs/hospital.key
+#     reverse_proxy streamlit:8501
+# }
+
+# 2. HTTP Basic Authentication:
+#
+# :80 {
+#     basic_auth {
+#         ethan <bcrypt-hash>
+#     }
+#     reverse_proxy streamlit:8501
+# }
+
+# 3. OIDC via forward_auth (Authelia / Keycloak / etc.):
+#
+# :80 {
+#     forward_auth authelia:9091 {
+#         uri /api/verify?rd=https://auth.hospital.internal/
+#         copy_headers Remote-Remote-User Remote-Remote-Groups Remote-Remote-Name Remote-Remote-Email
+#     }
+#     reverse_proxy streamlit:8501
+# }

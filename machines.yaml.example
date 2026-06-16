@@ -1,0 +1,36 @@
+# machines.yaml — copy to machines.yaml and edit for your centre.
+# Only machines.yaml.example is committed; machines.yaml is gitignored.
+#
+# All paths are CONTAINER paths (what the app sees inside Docker).
+# See docker-compose.yml for the host→container volume mapping.
+
+machines:
+  LA2:
+    display_name: "LA2 (TrueBeam)"
+    dicom_roots:
+      winston_lutz: /data/LA2/WinstonLutz
+      # Future modules (additive; ignored by v1):
+      # catphan: /data/LA2/CatPhan
+      # field_profile: /data/LA2/FieldProfile
+
+output:
+  root: /out   # container path, mounted read-write
+
+analysis_defaults:
+  winston_lutz:
+    # Required keys:
+    bb_size_mm: 5.0
+    machine_scale: VARIAN_IEC      # one of: VARIAN_IEC, VARIAN_STANDARD, IEC61217
+    tolerance_mm: 1.0              # UI-only pass/fail threshold (not passed to pylinac)
+    # Optional keys (fall back to pylinac defaults if absent):
+    # low_density_bb: false
+    # open_field: false
+    # apply_virtual_shift: false
+    # snap_tolerance: 5
+    # gantry_reference: 0
+    # collimator_reference: 0
+    # couch_reference: 0
+
+assets:
+  fry_meme_path: /assets/fry_money.png
+  logo_path: /assets/logo.png

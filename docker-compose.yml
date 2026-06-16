@@ -1,0 +1,27 @@
+services:
+  streamlit:
+    build: .
+    expose:
+      - "8501"           # container-internal only; NOT published to host
+    volumes:
+      # DICOM share: read-only (container-deployment spec R2)
+      - /mnt/hospital/RT_DICOM:/data:ro
+      # Output share: read-write (spec R3)
+      - /mnt/hospital/RT_Results:/out:rw
+      # Config: read-only bind-mount (machine-config spec)
+      - ./machines.yaml:/app/machines.yaml:ro
+      # Templates: read-only bind-mount (updated without rebuild)
+      - ./templates:/app/templates:ro
+      # Assets: read-only (Fry meme etc.)
+      - /mnt/hospital/RT_Assets:/assets:ro
+    restart: unless-stopped
+
+  caddy:
+    image: caddy:2
+    ports:
+      - "80:80"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+    depends_on:
+      - streamlit
+    restart: unless-stopped
