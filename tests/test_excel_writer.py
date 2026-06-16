@@ -126,7 +126,9 @@ def test_sanitise_exactly_31_chars() -> None:
 def test_write_session_output_creates_paired_files(tmp_path: Path) -> None:
     """Both .xltx and .xlsx are created in the session folder."""
     result = _make_result()
-    xlsx_path = write_session_output(result, tmp_path, TEMPLATE_PATH)
+    xlsx_path = write_session_output(
+        result, tmp_path, TEMPLATE_PATH, machine_display_name="LA2 (TrueBeam)"
+    )
 
     assert xlsx_path.exists()
     assert xlsx_path.suffix == ".xlsx"
@@ -136,18 +138,24 @@ def test_write_session_output_creates_paired_files(tmp_path: Path) -> None:
 
 
 def test_write_session_output_folder_structure(tmp_path: Path) -> None:
-    r"""Folder is ``<root>/<MACHINE>/WL/<MACHINE>_WL_<RUNFOLDER>``."""
+    r"""Folder is ``<root>/Clinical QA/<display>/Pylinac/WL/<MACHINE>_WL_<RUNFOLDER>``."""
     result = _make_result()
-    xlsx_path = write_session_output(result, tmp_path, TEMPLATE_PATH)
+    xlsx_path = write_session_output(
+        result, tmp_path, TEMPLATE_PATH, machine_display_name="LA2 (TrueBeam)"
+    )
 
-    expected_dir = tmp_path / "LA2" / "WL" / "LA2_WL_2026-06-16_143022"
+    expected_dir = (
+        tmp_path / "Clinical QA" / "LA2 (TrueBeam)" / "Pylinac" / "WL" / "LA2_WL_2026-06-16_143022"
+    )
     assert xlsx_path.parent == expected_dir
 
 
 def test_all_25_named_cells_populated(tmp_path: Path) -> None:
     """All 24 metric cells + template_version are populated."""
     result = _make_result()
-    xlsx_path = write_session_output(result, tmp_path, TEMPLATE_PATH)
+    xlsx_path = write_session_output(
+        result, tmp_path, TEMPLATE_PATH, machine_display_name="LA2 (TrueBeam)"
+    )
     wb = load_workbook(str(xlsx_path))
 
     from core.config import REQUIRED_TEMPLATE_NAMES
@@ -164,7 +172,9 @@ def test_all_25_named_cells_populated(tmp_path: Path) -> None:
 def test_sheet_count_is_n_plus_one(tmp_path: Path) -> None:
     """Sheet count = summary + N per-image sheets."""
     result = _make_result(n_images=5)
-    xlsx_path = write_session_output(result, tmp_path, TEMPLATE_PATH)
+    xlsx_path = write_session_output(
+        result, tmp_path, TEMPLATE_PATH, machine_display_name="LA2 (TrueBeam)"
+    )
     wb = load_workbook(str(xlsx_path))
 
     # 1 summary sheet + 5 per-image sheets
@@ -174,7 +184,9 @@ def test_sheet_count_is_n_plus_one(tmp_path: Path) -> None:
 def test_per_image_sheet_titles_and_contents(tmp_path: Path) -> None:
     """Per-image sheets have the right title and contents (parallel alignment)."""
     result = _make_result(n_images=3)
-    xlsx_path = write_session_output(result, tmp_path, TEMPLATE_PATH)
+    xlsx_path = write_session_output(
+        result, tmp_path, TEMPLATE_PATH, machine_display_name="LA2 (TrueBeam)"
+    )
     wb = load_workbook(str(xlsx_path))
 
     per_image_sheets = wb.sheetnames[1:]  # skip summary
@@ -193,7 +205,9 @@ def test_per_image_sheet_titles_and_contents(tmp_path: Path) -> None:
 def test_tolerance_not_written(tmp_path: Path) -> None:
     """tolerance_mm is NOT written to any named cell or per-image field."""
     result = _make_result()
-    xlsx_path = write_session_output(result, tmp_path, TEMPLATE_PATH)
+    xlsx_path = write_session_output(
+        result, tmp_path, TEMPLATE_PATH, machine_display_name="LA2 (TrueBeam)"
+    )
     wb = load_workbook(str(xlsx_path))
 
     # No defined name should be 'tolerance_mm'
@@ -210,13 +224,17 @@ def test_tolerance_not_written(tmp_path: Path) -> None:
 def test_rerun_overwrites_same_session(tmp_path: Path) -> None:
     """Re-running the same session overwrites both files."""
     result = _make_result()
-    xlsx_path = write_session_output(result, tmp_path, TEMPLATE_PATH)
+    xlsx_path = write_session_output(
+        result, tmp_path, TEMPLATE_PATH, machine_display_name="LA2 (TrueBeam)"
+    )
     first_mtime = xlsx_path.stat().st_mtime
 
     # Modify summary and re-write
     result2 = _make_result()
     object.__setattr__(result2, "summary", {**result.summary, "max_2d_cax_to_bb": 9.99})
-    xlsx_path2 = write_session_output(result2, tmp_path, TEMPLATE_PATH)
+    xlsx_path2 = write_session_output(
+        result2, tmp_path, TEMPLATE_PATH, machine_display_name="LA2 (TrueBeam)"
+    )
 
     assert xlsx_path == xlsx_path2
     assert xlsx_path.stat().st_mtime >= first_mtime

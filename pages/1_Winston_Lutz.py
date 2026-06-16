@@ -114,6 +114,7 @@ def _run_simple_analysis(
 ) -> None:
     """Execute Simple-mode analysis with error wrapping (6.5)."""
     wl_defaults = config.wl_defaults
+    machine = config.machines[machine_key]
     try:
         with st.spinner("Running Winston-Lutz analysis..."):
             result = run_wl_analysis_cached(
@@ -135,6 +136,9 @@ def _run_simple_analysis(
                 result=result,
                 output_root=Path(config.output.root),
                 template_path=template_path,
+                machine_display_name=machine.display_name,
+                category=config.output.category,
+                pylinac_subfolder=config.output.pylinac_subfolder,
             )
         # Store in session state for success card + hand-off
         st.session_state["wl_result"] = result
@@ -493,10 +497,15 @@ def _handle_download(
     template_path: Path,
 ) -> None:
     """7.9 Download xlsx handler."""
+    machine = config.machines.get(result.machine_id)
+    display_name = machine.display_name if machine else result.machine_id
     xlsx_path = write_session_output(
         result=result,
         output_root=Path(config.output.root),
         template_path=template_path,
+        machine_display_name=display_name,
+        category=config.output.category,
+        pylinac_subfolder=config.output.pylinac_subfolder,
     )
     with open(xlsx_path, "rb") as f:
         st.download_button(

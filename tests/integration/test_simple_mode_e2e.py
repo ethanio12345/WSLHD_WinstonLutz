@@ -107,6 +107,7 @@ def test_simple_mode_e2e(e2e_setup) -> None:
         result=result,
         output_root=Path(config.output.root),
         template_path=template_path,
+        machine_display_name="LA2 (TrueBeam)",
     )
 
     # Verify xlsx exists

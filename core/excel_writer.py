@@ -113,33 +113,67 @@ def _serialize_for_excel(val: Any) -> Any:
     return str(val)
 
 
-def _session_folder(output_root: Path, machine_id: str, runfolder_name: str) -> Path:
-    """Build the per-session output folder path: ``<root>/<MACHINE>/WL/<MACHINE>_WL_<RUNFOLDER>``."""
-    return Path(output_root) / machine_id / "WL" / f"{machine_id}_WL_{runfolder_name}"
+def _session_folder(
+    output_root: Path,
+    machine_id: str,
+    machine_display_name: str,
+    runfolder_name: str,
+    category: str = "Clinical QA",
+    pylinac_subfolder: str = "Pylinac",
+) -> Path:
+    """Build the per-session output folder path.
+
+    Structure::
+
+        <root>/<category>/<display_name>/<pylinac_subfolder>/WL/<MACHINE>_WL_<RUNFOLDER>
+
+    e.g. ``/out/Clinical QA/LA2 (TrueBeam)/Pylinac/WL/LA2_WL_demo_clinical``
+    """
+    return (
+        Path(output_root)
+        / category
+        / machine_display_name
+        / pylinac_subfolder
+        / "WL"
+        / f"{machine_id}_WL_{runfolder_name}"
+    )
 
 
 def write_session_output(
     result: WLAnalysisResult,
     output_root: Path,
     template_path: Path,
+    machine_display_name: str,
+    category: str = "Clinical QA",
+    pylinac_subfolder: str = "Pylinac",
 ) -> Path:
     """Write paired ``.xltx`` + ``.xlsx`` for a Winston-Lutz session.
 
-    Creates ``<output_root>/<MACHINE>/WL/<MACHINE>_WL_<RUNFOLDER>/`` if needed,
-    copies the template as ``.xltx``, loads it, populates the 24 metric named
-    cells + ``template_version``, adds one per-image sheet per
-    ``image_keys[i]``, and saves the ``.xlsx``.
+    Creates the session folder hierarchy if needed, copies the template as
+    ``.xltx``, loads it, populates the 24 metric named cells +
+    ``template_version``, adds one per-image sheet per ``image_keys[i]``,
+    and saves the ``.xlsx``.
 
     Args:
         result: The analysis result to write.
         output_root: The output root (``config.output.root``).
         template_path: Path to ``templates/winston_lutz.xltx``.
+        machine_display_name: Human-readable machine name for the folder path.
+        category: Top-level category folder (default ``"Clinical QA"``).
+        pylinac_subfolder: Tool subfolder (default ``"Pylinac"``).
 
     Returns:
         The path to the written ``.xlsx`` file.
     """
     runfolder_name = Path(result.runfolder_path).name
-    session_dir = _session_folder(output_root, result.machine_id, runfolder_name)
+    session_dir = _session_folder(
+        output_root,
+        result.machine_id,
+        machine_display_name,
+        runfolder_name,
+        category,
+        pylinac_subfolder,
+    )
     session_dir.mkdir(parents=True, exist_ok=True)
 
     base_name = f"{result.machine_id}_WL_{runfolder_name}"

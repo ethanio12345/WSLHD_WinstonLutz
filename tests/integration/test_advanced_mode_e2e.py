@@ -76,6 +76,7 @@ def test_advanced_rerun_overwrites_xlsx(advanced_setup) -> None:
         result=result1,
         output_root=Path(setup["output_root"]),
         template_path=template_path,
+        machine_display_name="LA2 (TrueBeam)",
     )
     _max_dist_1 = result1.summary["max_2d_cax_to_bb"]
 
@@ -92,6 +93,7 @@ def test_advanced_rerun_overwrites_xlsx(advanced_setup) -> None:
         result=result2,
         output_root=Path(setup["output_root"]),
         template_path=template_path,
+        machine_display_name="LA2 (TrueBeam)",
     )
 
     # The xlsx path is the same (same session folder)

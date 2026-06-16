@@ -110,6 +110,8 @@ class OutputConfig(BaseModel):
     """Output directory configuration."""
 
     root: str
+    category: str = "Clinical QA"
+    pylinac_subfolder: str = "Pylinac"
 
 
 class WLDefaults(BaseModel):
