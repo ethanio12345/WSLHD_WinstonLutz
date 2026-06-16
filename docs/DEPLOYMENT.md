@@ -96,6 +96,50 @@ doesn't exist yet.
 docker compose exec streamlit ls /data/LA2/WinstonLutz
 ```
 
+### 5. CatPhan template missing
+
+**Symptom:** `CatPhan template not found: templates/catphan_504.xltx`
+
+**Cause:** A machine has `catphan` configured but the CatPhan xltx template
+hasn't been generated yet.
+
+**Fix:** Generate the template:
+```bash
+uv run python scripts/build_catphan_xltx_template.py
+```
+
+### 6. CatPhan module configured without defaults
+
+**Symptom:** `catphan module configured for machine(s) but analysis_defaults.catphan is missing`
+
+**Cause:** A machine has `catphan` under `dicom_roots` but the
+`analysis_defaults.catphan` section is absent from `machines.yaml`.
+
+**Fix:** Add the `catphan` defaults section to `machines.yaml`:
+```yaml
+analysis_defaults:
+  catphan:
+    hu_tolerance: 40
+    scaling_tolerance: 0.5
+    slice_thickness_tolerance: 0.5
+```
+
+## Enabling the CatPhan page
+
+The CatPhan page (`pages/2_CatPhan.py`) is auto-discovered by Streamlit and
+always appears in the sidebar. However, the machine dropdown will be empty
+unless at least one machine has `catphan` configured.
+
+To enable CatPhan for a machine:
+
+1. Add `catphan:` under that machine's `dicom_roots` in `machines.yaml`
+2. Add the `analysis_defaults.catphan` section
+3. Ensure `templates/catphan_504.xltx` exists (run the generator if not)
+4. Restart the container: `docker compose restart streamlit`
+
+The CatPhan output path follows the same deep layout as WL:
+`/out/<CATEGORY>/<DISPLAY>/Pylinac/CatPhan/<MACHINE>_CP_<RUNFOLDER>/`
+
 ## Escalation paths
 
 See [`README.md`](../README.md#auth--https-escalation) for enabling HTTPS,

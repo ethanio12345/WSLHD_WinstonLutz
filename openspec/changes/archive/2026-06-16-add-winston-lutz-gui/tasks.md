@@ -87,4 +87,4 @@
 
 - [x] 12.1 Run full Python verification pipeline: `uv run ruff format`, `uv run ruff check --fix`, `rm -rf .mypy_cache && uv run mypy core/`, `uv run pytest tests/ -v` — all must pass
 - [x] 12.2 Verify all spec scenarios have at least one corresponding test (cross-reference `specs/*/spec.md` scenarios with `tests/**`)
-- [ ] 12.3 Manual smoke test with synthetic DICOMs in Docker: container starts, simple mode writes xlsx, advanced mode tabs render, re-run works, dialog opens
+- [x] 12.3 Manual smoke test with synthetic DICOMs in Docker: container starts, simple mode writes xlsx, advanced mode tabs render, re-run works, dialog opens

@@ -9,8 +9,9 @@ machines:
     display_name: "LA2 (TrueBeam)"
     dicom_roots:
       winston_lutz: /data/LA2/WinstonLutz
-      # Future modules (additive; ignored by v1):
+      # CatPhan is independently optional per machine. Uncomment to enable:
       # catphan: /data/LA2/CatPhan
+      # Future modules (additive; ignored until their page ships):
       # field_profile: /data/LA2/FieldProfile
 
 output:
@@ -30,6 +31,24 @@ analysis_defaults:
     # gantry_reference: 0
     # collimator_reference: 0
     # couch_reference: 0
+  # CatPhan defaults — required iff any machine has `catphan` configured.
+  # Uncomment together with the catphan dicom_root above to enable the CatPhan page.
+  # catphan:
+  #   # Required keys:
+  #   hu_tolerance: 40
+  #   scaling_tolerance: 0.5          # mm
+  #   slice_thickness_tolerance: 0.5  # mm
+  #   # Optional keys (fall back to pylinac defaults if absent):
+  #   # thickness_slice_straddle: auto   # auto | 0 | 1 | 2 | 3
+  #   # expected_hu_values:             # dict; config-only (not in the Advanced sidebar)
+  #   #   Air: -999
+  #   #   PMP: -203
+  #   # x_adjustment: 0
+  #   # y_adjustment: 0
+  #   # angle_adjustment: 0
+  #   # roi_size_factor: 1.0
+  #   # scaling_factor: 1.0
+  #   # minimum_rois_seen: 3
 
 assets:
   fry_meme_path: /assets/fry_money.png

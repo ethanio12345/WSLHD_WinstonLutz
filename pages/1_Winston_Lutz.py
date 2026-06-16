@@ -13,6 +13,12 @@ from typing import Any
 
 import streamlit as st
 
+from core.caching import (
+    get_cached_result,
+    invalidate,
+    set_cached_obj,
+    set_cached_result,
+)
 from core.config import AppConfig
 from core.excel_writer import write_session_output
 from core.result_types import WLAnalysisResult
@@ -94,9 +100,10 @@ def _render_simple(config: AppConfig, template_path: Path) -> None:
         )
 
     # If we have a cached result from a previous run this session, show the success card
-    if "wl_result" in st.session_state and st.session_state.get("wl_machine") == machine_key:
+    _wl_result = get_cached_result("wl")
+    if _wl_result is not None and st.session_state.get("wl_machine") == machine_key:
         _render_success_card(
-            result=st.session_state["wl_result"],
+            result=_wl_result,
             xlsx_path=st.session_state.get("wl_xlsx_path"),
             tolerance_mm=wl_defaults.tolerance_mm,
             template_path=template_path,
@@ -141,7 +148,7 @@ def _run_simple_analysis(
                 pylinac_subfolder=config.output.pylinac_subfolder,
             )
         # Store in session state for success card + hand-off
-        st.session_state["wl_result"] = result
+        set_cached_result("wl", result)
         st.session_state["wl_xlsx_path"] = str(xlsx_path)
         st.session_state["wl_machine"] = machine_key
         st.rerun()
@@ -153,10 +160,15 @@ def _run_simple_analysis(
 
 
 def _render_machine_dropdown(config: AppConfig) -> str | None:
-    """6.1 Sidebar machine dropdown. Returns machine key or None (empty state)."""
-    machine_keys = config.sorted_machine_keys
+    """6.1 Sidebar machine dropdown. Returns machine key or None (empty state).
+
+    Only machines with ``dicom_roots.winston_lutz`` configured appear (per the
+    MODIFIED wl-simple-mode spec — a machine may have catphan-only and must not
+    appear in the WL dropdown).
+    """
+    machine_keys = config.machine_keys_for_module("winston_lutz")
     if not machine_keys:
-        st.warning("No machines configured. Edit machines.yaml and reload.")
+        st.warning("No machines have Winston-Lutz configured. Edit machines.yaml and reload.")
         return None
 
     options = {k: config.machines[k].display_name for k in machine_keys}
@@ -192,7 +204,7 @@ def _render_success_card(
 
     # 6.6 Hand-off to Advanced mode
     if st.button("View in Advanced mode"):
-        st.session_state["wl_result"] = result
+        set_cached_result("wl", result)
         st.session_state["wl_mode_switch"] = "advanced"
         st.rerun()
 
@@ -240,7 +252,7 @@ def _render_advanced(config: AppConfig, template_path: Path) -> None:
     st.header("Winston-Lutz — Advanced Mode")
 
     # 7.7 Hand-off reception: if wl_result is set, use it; don't re-run
-    result: WLAnalysisResult | None = st.session_state.get("wl_result")
+    result: WLAnalysisResult | None = get_cached_result("wl")
     machine_key = st.session_state.get("wl_machine")
 
     if result is None or machine_key is None:
@@ -365,7 +377,7 @@ def _advanced_initial_run(
                     dicom_file_count=dicom_count,
                     runfolder_mtime_val=runfolder_mtime(runfolder),
                 )
-            st.session_state["wl_result"] = result
+            set_cached_result("wl", result)
             st.session_state["wl_machine"] = machine_key
             st.rerun()
         except Exception:
@@ -455,7 +467,7 @@ def _handle_rerun(
 ) -> WLAnalysisResult | None:
     """7.8 Re-run analysis handler — invalidates wl_obj, calls cached run."""
     # Clear the lazy wl_obj so it reloads with new params
-    st.session_state.pop("wl_obj", None)
+    invalidate("wl", suffixes=("obj",))
 
     runfolder = Path(prev_result.runfolder_path)
     dicom_count = count_dicoms(runfolder)
@@ -486,7 +498,7 @@ def _handle_rerun(
     if result == prev_result:
         st.info("Result loaded from cache (parameters unchanged)")
     else:
-        st.session_state["wl_result"] = result
+        set_cached_result("wl", result)
     return result
 
 
@@ -764,14 +776,16 @@ def _render_wl_image(wl_obj: Any, idx: int, caption: str | None = None) -> None:
 
 def _get_wl_obj(result: WLAnalysisResult):  # type: ignore[no-untyped-def]
     """7.6 Lazily initialise the pylinac WinstonLutz object in session_state."""
-    if "wl_obj" not in st.session_state:
+    obj = st.session_state.get("wl_obj")
+    if obj is None:
         try:
             wl_obj = load_wl_object(result.runfolder_path, result.params_used)
-            st.session_state["wl_obj"] = wl_obj
+            set_cached_obj("wl", wl_obj)
+            return wl_obj
         except Exception:
             logger.exception("Failed to load WL object for detection overlay")
             return None
-    return st.session_state["wl_obj"]
+    return obj
 
 
 # ---------------------------------------------------------------------------
