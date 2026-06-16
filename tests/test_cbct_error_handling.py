@@ -101,5 +101,4 @@ def test_missing_template_raises(tmp_path: Path) -> None:
             result=result,
             output_root=output_root,
             template_path=tmp_path / "nonexistent.xltx",
-            machine_display_name="TEST",
         )

@@ -100,7 +100,6 @@ def test_xlsx_overwritten_on_rerun(
         result=result_40,
         output_root=output_root,
         template_path=template_path,
-        machine_display_name="LA2 (TrueBeam)",
     )
 
     result_80 = _run_analysis(catphan_runfolder, hu_tolerance=80)
@@ -108,7 +107,6 @@ def test_xlsx_overwritten_on_rerun(
         result=result_80,
         output_root=output_root,
         template_path=template_path,
-        machine_display_name="LA2 (TrueBeam)",
     )
 
     # Same path (session folder is determined by machine + runfolder, not params)

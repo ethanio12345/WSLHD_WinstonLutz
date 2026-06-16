@@ -62,20 +62,19 @@ machines:
 Each page's dropdown lists only machines with that module configured. The
 dropdown lists machines sorted alphabetically by key.
 
-## `output`
+## `output_root` (per machine)
+
+Each machine has its own `output_root` — the directory where WL/CatPhan session
+folders are written as subdirectories. This is a **per-machine** field, not a
+global setting, so each machine can write to its own network share.
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `root` | str (path) | yes | Container path for xlsx/xltx output (must exist and be writable) |
+| `machines.<key>.output_root` | str (path) | yes | Per-machine output directory (must exist and be writable) |
 
-```yaml
-output:
-  root: /out
-```
-
-The app creates `/out/<CATEGORY>/<DISPLAY>/<PYLINAC_SUBFOLDER>/<MODULE>/<MACHINE>_<PREFIX>_<RUNFOLDER>/`
-per session. e.g. `/out/Clinical QA/LA2 (TrueBeam)/Pylinac/WL/LA2_WL_2026-06-16_143022/`
-or `/out/Clinical QA/LA2 (TrueBeam)/Pylinac/CatPhan/LA2_CP_2026-06-16_143022/`.
+The app creates `<output_root>/<MODULE>/<MACHINE>_<PREFIX>_<RUNFOLDER>/` per session.
+e.g. `/data/LA2/output/WL/LA2_WL_demo_clinical/`
+     `/data/LA2/output/CatPhan/LA2_CP_2026-06-16_monthly/`
 
 ## `analysis_defaults.winston_lutz`
 
@@ -173,7 +172,7 @@ At startup, the app validates:
 2. **Module defaults**: each configured module's `analysis_defaults` section present
    (e.g. `catphan` configured requires `analysis_defaults.catphan`)
 3. **DICOM roots**: each machine's configured `dicom_roots.*` paths exist
-4. **Output root**: `output.root` exists and is writable (probe-write)
+4. **Output roots**: each machine's `output_root` exists and is writable (probe-write)
 5. **Templates**: `templates/winston_lutz.xltx` defines all 25 required named cells;
    `templates/catphan_504.xltx` defines all 19 required named cells (if CatPhan is configured)
 

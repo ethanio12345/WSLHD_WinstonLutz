@@ -63,9 +63,6 @@ def write_session_output(
     result: WLAnalysisResult,
     output_root: Path,
     template_path: Path,
-    machine_display_name: str,
-    category: str = "Clinical QA",
-    pylinac_subfolder: str = "Pylinac",
 ) -> Path:
     """Write paired ``.xltx`` + ``.xlsx`` for a Winston-Lutz session.
 
@@ -76,11 +73,8 @@ def write_session_output(
 
     Args:
         result: The analysis result to write.
-        output_root: The output root (``config.output.root``).
+        output_root: The machine's output root (``machine.output_root``).
         template_path: Path to ``templates/winston_lutz.xltx``.
-        machine_display_name: Human-readable machine name for the folder path.
-        category: Top-level category folder (default ``"Clinical QA"``).
-        pylinac_subfolder: Tool subfolder (default ``"Pylinac"``).
 
     Returns:
         The path to the written ``.xlsx`` file.
@@ -92,12 +86,9 @@ def write_session_output(
     session_dir = build_session_folder(
         output_root=output_root,
         machine_id=result.machine_id,
-        machine_display_name=machine_display_name,
         module_dir="WL",
         runfolder_name=runfolder_name,
         file_prefix="WL",
-        category=category,
-        pylinac_subfolder=pylinac_subfolder,
     )
     xltx_out = copy_template_to_session(template_path, session_dir, base_name)
     logger.info("Copied template to %s", xltx_out)

@@ -72,7 +72,6 @@ def written_xlsx(
         result=analysis_result,
         output_root=output_root,
         template_path=template_path,
-        machine_display_name="LA2 (TrueBeam)",
     )
 
 
@@ -174,9 +173,7 @@ def test_paired_xltx_exists(written_xlsx: Path) -> None:
 
 
 def test_output_path_layout(written_xlsx: Path) -> None:
-    """The output path follows the deep layout: Clinical QA/.../Pylinac/CatPhan/LA2_CP_..."""
+    """The output path follows the per-machine layout: <root>/CatPhan/LA2_CP_..."""
     path_str = str(written_xlsx)
-    assert "Clinical QA" in path_str
-    assert "Pylinac" in path_str
     assert "CatPhan" in path_str
     assert "LA2_CP_" in written_xlsx.name

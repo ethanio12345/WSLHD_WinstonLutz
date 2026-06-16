@@ -49,9 +49,9 @@ def test_cbct_simple_mode_e2e(catphan_runfolder: Path, tmp_path: Path) -> None:
             "LA2": {
                 "display_name": "LA2 (TrueBeam)",
                 "dicom_roots": {"catphan": str(dicom_root)},
+                "output_root": str(output_root),
             }
         },
-        "output": {"root": str(output_root)},
         "analysis_defaults": {
             "catphan": {
                 "hu_tolerance": 40,
@@ -91,15 +91,11 @@ def test_cbct_simple_mode_e2e(catphan_runfolder: Path, tmp_path: Path) -> None:
         result=result,
         output_root=output_root,
         template_path=template_path,
-        machine_display_name="LA2 (TrueBeam)",
     )
 
     # Verify the xlsx exists at the expected deep path
     assert xlsx_path.exists()
     path_str = str(xlsx_path)
-    assert "Clinical QA" in path_str
-    assert "LA2 (TrueBeam)" in path_str
-    assert "Pylinac" in path_str
     assert "CatPhan" in path_str
     assert "LA2_CP_2026-06-16_monthly" in path_str
 

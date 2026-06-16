@@ -17,12 +17,12 @@ from core.config import MachineConfig
 
 def _machine(display_name: str, roots: dict[str, str]) -> MachineConfig:
     """Build a MachineConfig with the given dicom_roots."""
-    return MachineConfig(display_name=display_name, dicom_roots=roots)
+    return MachineConfig(display_name=display_name, dicom_roots=roots, output_root="/tmp")
 
 
 def test_wl_dropdown_filters_to_wl_configured_machines() -> None:
     """The WL dropdown lists only machines with winston_lutz configured."""
-    from core.config import AppConfig, AssetsConfig, OutputConfig
+    from core.config import AppConfig, AssetsConfig
 
     config = AppConfig(
         machines={
@@ -33,7 +33,6 @@ def test_wl_dropdown_filters_to_wl_configured_machines() -> None:
                 {"winston_lutz": "/data/LA4/WL", "catphan": "/data/LA4/CP"},
             ),
         },
-        output=OutputConfig(root="/out"),
         analysis_defaults={
             "winston_lutz": {
                 "bb_size_mm": 5.0,
@@ -57,7 +56,7 @@ def test_wl_dropdown_filters_to_wl_configured_machines() -> None:
 
 def test_catphan_dropdown_filters_to_cp_configured_machines() -> None:
     """The CatPhan dropdown lists only machines with catphan configured."""
-    from core.config import AppConfig, AssetsConfig, OutputConfig
+    from core.config import AppConfig, AssetsConfig
 
     config = AppConfig(
         machines={
@@ -68,7 +67,6 @@ def test_catphan_dropdown_filters_to_cp_configured_machines() -> None:
                 {"winston_lutz": "/data/LA4/WL", "catphan": "/data/LA4/CP"},
             ),
         },
-        output=OutputConfig(root="/out"),
         analysis_defaults={
             "winston_lutz": {
                 "bb_size_mm": 5.0,
@@ -92,13 +90,12 @@ def test_catphan_dropdown_filters_to_cp_configured_machines() -> None:
 
 def test_wl_dropdown_empty_when_no_wl_machines() -> None:
     """WL dropdown is empty when no machine has winston_lutz configured."""
-    from core.config import AppConfig, AssetsConfig, OutputConfig
+    from core.config import AppConfig, AssetsConfig
 
     config = AppConfig(
         machines={
             "LA4": _machine("LA4", {"catphan": "/data/LA4/CP"}),
         },
-        output=OutputConfig(root="/out"),
         analysis_defaults={
             "catphan": {
                 "hu_tolerance": 40,
@@ -114,7 +111,7 @@ def test_wl_dropdown_empty_when_no_wl_machines() -> None:
 
 def test_dropdown_keys_sorted_alphabetically() -> None:
     """Machine keys returned by machine_keys_for_module are sorted alphabetically."""
-    from core.config import AppConfig, AssetsConfig, OutputConfig
+    from core.config import AppConfig, AssetsConfig
 
     config = AppConfig(
         machines={
@@ -122,7 +119,6 @@ def test_dropdown_keys_sorted_alphabetically() -> None:
             "LA2": _machine("LA2", {"winston_lutz": "/data/LA2/WL"}),
             "LA1": _machine("LA1", {"winston_lutz": "/data/LA1/WL"}),
         },
-        output=OutputConfig(root="/out"),
         analysis_defaults={
             "winston_lutz": {
                 "bb_size_mm": 5.0,

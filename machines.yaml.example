@@ -13,9 +13,7 @@ machines:
       # catphan: /data/LA2/CatPhan
       # Future modules (additive; ignored until their page ships):
       # field_profile: /data/LA2/FieldProfile
-
-output:
-  root: /out   # container path, mounted read-write
+    output_root: /data/LA2/output      # per-machine output (WL/CatPhan written as subfolders)
 
 analysis_defaults:
   winston_lutz:

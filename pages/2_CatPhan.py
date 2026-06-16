@@ -146,11 +146,8 @@ def _run_simple_analysis(
             )
             xlsx_path = write_cbct_session_output(
                 result=result,
-                output_root=Path(config.output.root),
+                output_root=Path(machine.output_root),
                 template_path=template_path,
-                machine_display_name=machine.display_name,
-                category=config.output.category,
-                pylinac_subfolder=config.output.pylinac_subfolder,
             )
         # Store in session state for success card + hand-off
         set_cached_result("cp", result)
@@ -509,14 +506,11 @@ def _handle_download(
 ) -> None:
     """7.10 Download xlsx handler."""
     machine = config.machines.get(result.machine_id)
-    display_name = machine.display_name if machine else result.machine_id
+    output_root = machine.output_root if machine else "/tmp"
     xlsx_path = write_cbct_session_output(
         result=result,
-        output_root=Path(config.output.root),
+        output_root=Path(output_root),
         template_path=template_path,
-        machine_display_name=display_name,
-        category=config.output.category,
-        pylinac_subfolder=config.output.pylinac_subfolder,
     )
     with open(xlsx_path, "rb") as f:
         st.download_button(

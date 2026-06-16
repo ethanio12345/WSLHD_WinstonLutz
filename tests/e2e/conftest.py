@@ -109,9 +109,9 @@ def test_config(
                     "winston_lutz": str(wl_runfolder.parent),
                     "catphan": str(catphan_runfolder.parent),
                 },
+                "output_root": str(output_root),
             }
         },
-        "output": {"root": str(output_root)},
         "analysis_defaults": {
             "winston_lutz": {
                 "bb_size_mm": 5.0,
@@ -136,7 +136,7 @@ def output_root(
     test_config: dict[str, Any],
 ) -> Path:
     """Expose the output root directory for file-existence checks."""
-    return Path(test_config["output"]["root"])
+    return Path(test_config["machines"]["LA2"]["output_root"])
 
 
 @pytest.fixture(scope="session")

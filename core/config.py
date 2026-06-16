@@ -143,6 +143,9 @@ class MachineConfig(BaseModel):
     ``catphan`` are each independently optional. At least one module root must
     be present per machine. Unknown keys (e.g. ``field_profile``) pass through
     silently for forward compatibility.
+
+    ``output_root`` is the per-machine output directory where WL/CatPhan
+    session folders are written as subdirectories.
     """
 
     model_config = ConfigDict(extra="allow")
@@ -151,20 +154,15 @@ class MachineConfig(BaseModel):
     dicom_roots: dict[str, str] = Field(
         ..., description="Keyed by module name; at least one module root required per machine."
     )
+    output_root: str = Field(
+        ..., description="Per-machine output directory for WL/CatPhan session folders."
+    )
 
     @model_validator(mode="after")
     def _validate_at_least_one_module(self) -> MachineConfig:
         if not self.dicom_roots:
             raise ValueError("dicom_roots must contain at least one module root")
         return self
-
-
-class OutputConfig(BaseModel):
-    """Output directory configuration."""
-
-    root: str
-    category: str = "Clinical QA"
-    pylinac_subfolder: str = "Pylinac"
 
 
 class WLDefaults(BaseModel):
@@ -235,7 +233,6 @@ class AppConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     machines: dict[str, MachineConfig]
-    output: OutputConfig
     analysis_defaults: dict[str, Any] = Field(
         default_factory=dict,
         description="Keyed by module name; validated conditionally against configured modules.",
@@ -361,16 +358,13 @@ def load_config(path: Path) -> AppConfig:
             if not root_path.exists():
                 raise ConfigError(f"Machine {machine_key}: DICOM root {root_path} does not exist")
 
-    # Filesystem validation — output root writability
-    output_root = Path(config.output.root)
-    if not output_root.exists():
-        raise ConfigError(
-            f"Output root {output_root} does not exist — check the docker-compose volume mount"
-        )
-    if not _is_writable(output_root):
-        raise ConfigError(
-            f"Output root {output_root} is not writable — check mount options and disk space"
-        )
+    # Filesystem validation — output root per machine (writability)
+    for machine_key, machine in config.machines.items():
+        output_root = Path(machine.output_root)
+        if not output_root.exists():
+            raise ConfigError(f"Machine {machine_key}: output root {output_root} does not exist")
+        if not _is_writable(output_root):
+            raise ConfigError(f"Machine {machine_key}: output root {output_root} is not writable")
 
     return config
 
@@ -467,7 +461,6 @@ __all__ = [
     "ConfigError",
     "MachineConfig",
     "MachineScale",
-    "OutputConfig",
     "WLDefaults",
     "configure_logging",
     "load_config",

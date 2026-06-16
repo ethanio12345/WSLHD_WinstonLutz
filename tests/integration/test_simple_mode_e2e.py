@@ -57,9 +57,9 @@ def e2e_setup(tmp_path: Path):
             "LA2": {
                 "display_name": "LA2 (TrueBeam)",
                 "dicom_roots": {"winston_lutz": str(dicom_root)},
+                "output_root": str(output_root),
             }
         },
-        "output": {"root": str(output_root)},
         "analysis_defaults": {
             "winston_lutz": {
                 "bb_size_mm": 5.0,
@@ -105,9 +105,8 @@ def test_simple_mode_e2e(e2e_setup) -> None:
     # Write session output
     xlsx_path = write_session_output(
         result=result,
-        output_root=Path(config.output.root),
+        output_root=Path(config.machines["LA2"].output_root),
         template_path=template_path,
-        machine_display_name="LA2 (TrueBeam)",
     )
 
     # Verify xlsx exists

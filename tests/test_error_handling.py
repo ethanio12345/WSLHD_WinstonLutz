@@ -70,7 +70,7 @@ def test_read_only_output_dir(caplog: pytest.LogCaptureFixture, tmp_path: Path) 
 
     try:
         with caplog.at_level(logging.ERROR), pytest.raises((PermissionError, OSError)):
-            write_session_output(result, output_root, template_path, machine_display_name="LA2")
+            write_session_output(result, output_root, template_path)
     finally:
         output_root.chmod(0o755)
 

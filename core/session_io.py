@@ -1,12 +1,12 @@
-"""Per-session output folder creation + paired-xltx copy utilities.
+"""Per-machine output folder creation + paired-xltx copy utilities.
 
 Extracted from ``core/excel_writer.py``'s ``_session_folder`` (design D1, D6)
 so both the WL and CatPhan pages share the same canonical output path layout::
 
-    <output_root>/<CATEGORY>/<MACHINE_DISPLAY>/<PYLINAC_SUBFOLDER>/<MODULE>/<MACHINE>_<PREFIX>_<RUNFOLDER>/
+    <machine_output_root>/<MODULE>/<MACHINE>_<PREFIX>_<RUNFOLDER>/
 
-e.g. ``/out/Clinical QA/LA2 (TrueBeam)/Pylinac/WL/LA2_WL_2026-06-16_143022``
-     ``/out/Clinical QA/LA2 (TrueBeam)/Pylinac/CatPhan/LA2_CP_2026-06-16_143022``
+e.g. ``/data/LA2/output/WL/LA2_WL_2026-06-16_143022``
+     ``/data/LA2/output/CatPhan/LA2_CP_2026-06-16_143022``
 
 Public API:
     - :data:`MODULE_DISPATCH`
@@ -28,45 +28,32 @@ MODULE_DISPATCH: dict[str, tuple[str, str]] = {
 
 
 def build_session_folder(
-    output_root: Path,
+    output_root: str | Path,
     machine_id: str,
-    machine_display_name: str,
     module_dir: str,
     runfolder_name: str,
     file_prefix: str,
-    category: str = "Clinical QA",
-    pylinac_subfolder: str = "Pylinac",
 ) -> Path:
     """Build (and create) the per-session output folder path.
 
     Structure::
 
-        <root>/<category>/<display_name>/<pylinac_subfolder>/<module_dir>/<MACHINE>_<PREFIX>_<RUNFOLDER>
+        <output_root>/<module_dir>/<MACHINE>_<PREFIX>_<RUNFOLDER>
 
-    e.g. ``/out/Clinical QA/LA2 (TrueBeam)/Pylinac/WL/LA2_WL_demo_clinical``
-         ``/out/Clinical QA/LA2 (TrueBeam)/Pylinac/CatPhan/LA2_CP_2026-06-16_143022``
+    e.g. ``/data/LA2/output/WL/LA2_WL_demo_clinical``
+         ``/data/LA2/output/CatPhan/LA2_CP_2026-06-16_143022``
 
     Args:
-        output_root: The output root (``config.output.root``).
+        output_root: The machine's output root (``machine.output_root``).
         machine_id: Machine key (e.g. ``"LA2"``).
-        machine_display_name: Human-readable machine name for the folder path.
         module_dir: Literal module folder name (e.g. ``"WL"`` or ``"CatPhan"``).
         runfolder_name: The runfolder directory name.
         file_prefix: File-name prefix (e.g. ``"WL"`` or ``"CP"``).
-        category: Top-level category folder (default ``"Clinical QA"``).
-        pylinac_subfolder: Tool subfolder (default ``"Pylinac"``).
 
     Returns:
         The created session folder path.
     """
-    folder = (
-        Path(output_root)
-        / category
-        / machine_display_name
-        / pylinac_subfolder
-        / module_dir
-        / f"{machine_id}_{file_prefix}_{runfolder_name}"
-    )
+    folder = Path(output_root) / module_dir / f"{machine_id}_{file_prefix}_{runfolder_name}"
     folder.mkdir(parents=True, exist_ok=True)
     return folder
 

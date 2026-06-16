@@ -49,7 +49,6 @@ def _make_machine_yaml(
     if assets is None:
         assets = {"fry_meme_path": "/assets/fry.png", "logo_path": "/assets/logo.png"}
 
-    # Ensure the wl_root exists (filesystem validation requires it)
     Path(wl_root).mkdir(parents=True, exist_ok=True)
     Path(output_root).mkdir(parents=True, exist_ok=True)
 
@@ -60,9 +59,9 @@ def _make_machine_yaml(
             "LA2": {
                 "display_name": "LA2 (TrueBeam)",
                 "dicom_roots": {"winston_lutz": str(wl_root)},
+                "output_root": str(output_root),
             }
         },
-        "output": {"root": str(output_root)},
         "analysis_defaults": analysis_defaults,
         "assets": assets,
     }
@@ -83,7 +82,7 @@ def test_load_config_happy_path(tmp_path: Path) -> None:
 
     assert "LA2" in config.machines
     assert config.machines["LA2"].display_name == "LA2 (TrueBeam)"
-    assert config.output.root.startswith(str(tmp_path))
+    assert config.machines["LA2"].output_root.startswith(str(tmp_path))
     assert config.wl_defaults.bb_size_mm == 5.0
     assert config.wl_defaults.tolerance_mm == 1.0
     assert config.sorted_machine_keys == ["LA2"]
@@ -207,7 +206,7 @@ def test_missing_output_root(tmp_path: Path) -> None:
     output_root = tmp_path / "nope"
     config_path = _make_machine_yaml(tmp_path, output_root=output_root)
     output_root.rmdir()
-    with pytest.raises(ConfigError, match=r"Output root .* does not exist"):
+    with pytest.raises(ConfigError, match=r"output root .* does not exist"):
         load_config(config_path)
 
 
@@ -268,14 +267,15 @@ def _make_multi_module_yaml(
         output_root = tmp_path / "out"
         output_root.mkdir(parents=True, exist_ok=True)
 
-    # Ensure every configured dicom_root exists on disk
+    # Ensure every configured dicom_root exists on disk; add output_root to each machine
     for _mkey, mconf in machines.items():
         for _mod, root in mconf.get("dicom_roots", {}).items():
             Path(root).mkdir(parents=True, exist_ok=True)
+        mconf.setdefault("output_root", str(output_root))
+        Path(mconf["output_root"]).mkdir(parents=True, exist_ok=True)
 
     data: dict[str, Any] = {
         "machines": machines,
-        "output": {"root": str(output_root)},
         "analysis_defaults": analysis_defaults or {},
         "assets": {"fry_meme_path": "/assets/fry.png", "logo_path": "/assets/logo.png"},
     }

@@ -55,9 +55,9 @@ def broken_server(
             "LA2": {
                 "display_name": "LA2 (TrueBeam)",
                 "dicom_roots": {"winston_lutz": str(wl_root)},
+                "output_root": str(output_root),
             }
         },
-        "output": {"root": str(output_root)},
         "analysis_defaults": {
             "winston_lutz": {
                 "bb_size_mm": 5.0,
