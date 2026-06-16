@@ -512,6 +512,33 @@ def _handle_download(
 # ---------------------------------------------------------------------------
 
 
+def _format_bb_shift(x: float, y: float, z: float) -> str:
+    """Format the 3D BB shift vector as a human-readable string with directions.
+
+    Uses IEC 61217 convention (Varian default):
+        X+ = Left,    X- = Right
+        Y+ = Superior, Y- = Inferior
+        Z+ = Anterior, Z- = Posterior
+
+    Args:
+        x: Lateral shift component (mm).
+        y: Longitudinal shift component (mm).
+        z: Vertical shift component (mm).
+
+    Returns:
+        e.g. ``"0.50 mm Left, 0.30 mm Superior, 0.20 mm Posterior (total 0.62 mm)"``
+    """
+    import math
+
+    parts = [
+        f"{abs(x):.2f} mm {'Left' if x >= 0 else 'Right'}",
+        f"{abs(y):.2f} mm {'Superior' if y >= 0 else 'Inferior'}",
+        f"{abs(z):.2f} mm {'Anterior' if z >= 0 else 'Posterior'}",
+    ]
+    total = math.sqrt(x * x + y * y + z * z)
+    return f"{', '.join(parts)}  (total {total:.2f} mm)"
+
+
 def _render_overview_tab(result: WLAnalysisResult, tolerance_mm: float) -> None:
     """7.2 Overview tab — summary dataframe + pass/fail on max_2d_cax_to_bb."""
     import pandas as pd
@@ -539,6 +566,14 @@ def _render_overview_tab(result: WLAnalysisResult, tolerance_mm: float) -> None:
         rows.append({"Metric": name, "Value": value, "Status": status})
 
     st.dataframe(pd.DataFrame(rows), use_container_width=True)
+
+    # Human-readable BB shift vector with clinical directions
+    bb_shift_text = _format_bb_shift(
+        result.summary.get("bb_shift_x", 0.0),
+        result.summary.get("bb_shift_y", 0.0),
+        result.summary.get("bb_shift_z", 0.0),
+    )
+    st.info(f"**Suggested BB shift:** {bb_shift_text}")
 
     # "Analysed with" summary line
     params = result.params_used
