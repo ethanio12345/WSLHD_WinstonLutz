@@ -101,7 +101,7 @@ At startup, if any machine in `machines.yaml` has `catphan` configured, the app 
 
 ### Requirement: No tolerance field exists for CatPhan
 
-Unlike WL (which has a UI-only `tolerance_mm` that must be excluded from the xlsx), CatPhan has no equivalent UI tolerance field. The four pass/fail flags (`hu_linearity_passed`, `geometry_passed`, `uniformity_passed`, `thickness_passed`) written to the summary sheet come from pylinac's own per-test tolerances (`hu_tolerance`, `scaling_tolerance`, `slice_thickness_tolerance`), which are analysis parameters but are NOT separately written to the xlsx (the per-CTP-module sheets contain measured values, not the tolerance inputs).
+Unlike WL (which has a UI-only `tolerance_mm` that must be excluded from the xlsx), CatPhan has no equivalent UI tolerance field. The xlsx SHALL NOT contain any field named `tolerance_mm` or similar UI-tolerance in any sheet. The four pass/fail flags (`hu_linearity_passed`, `geometry_passed`, `uniformity_passed`, `thickness_passed`) written to the summary sheet come from pylinac's own per-test tolerances (`hu_tolerance`, `scaling_tolerance`, `slice_thickness_tolerance`), which are analysis parameters but are NOT separately written to the xlsx (the per-CTP-module sheets contain measured values, not the tolerance inputs).
 
 #### Scenario: No tolerance field written
 
