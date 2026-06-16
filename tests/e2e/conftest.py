@@ -132,6 +132,14 @@ def test_config(
 
 
 @pytest.fixture(scope="session")
+def output_root(
+    test_config: dict[str, Any],
+) -> Path:
+    """Expose the output root directory for file-existence checks."""
+    return Path(test_config["output"]["root"])
+
+
+@pytest.fixture(scope="session")
 def config_path(
     test_config: dict[str, Any],
     tmp_path_factory: pytest.TempPathFactory,
