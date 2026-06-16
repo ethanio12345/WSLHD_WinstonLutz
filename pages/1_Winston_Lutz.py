@@ -306,24 +306,30 @@ def _advanced_initial_run(
     st.info(f"Will analyze: `{runfolder.name}` ({dicom_count} DICOMs)")
 
     if st.sidebar.button("Run analysis", type="primary"):
-        result = run_wl_analysis_cached(
-            machine_id=machine_key,
-            runfolder_path=str(runfolder),
-            bb_size_mm=wl_defaults.bb_size_mm,
-            machine_scale=wl_defaults.machine_scale,
-            low_density_bb=wl_defaults.low_density_bb,
-            open_field=wl_defaults.open_field,
-            apply_virtual_shift=wl_defaults.apply_virtual_shift,
-            snap_tolerance=wl_defaults.snap_tolerance,
-            gantry_reference=wl_defaults.gantry_reference,
-            collimator_reference=wl_defaults.collimator_reference,
-            couch_reference=wl_defaults.couch_reference,
-            dicom_file_count=dicom_count,
-            runfolder_mtime_val=runfolder_mtime(runfolder),
-        )
-        st.session_state["wl_result"] = result
-        st.session_state["wl_machine"] = machine_key
-        st.rerun()
+        try:
+            with st.spinner("Running Winston-Lutz analysis..."):
+                result = run_wl_analysis_cached(
+                    machine_id=machine_key,
+                    runfolder_path=str(runfolder),
+                    bb_size_mm=wl_defaults.bb_size_mm,
+                    machine_scale=wl_defaults.machine_scale,
+                    low_density_bb=wl_defaults.low_density_bb,
+                    open_field=wl_defaults.open_field,
+                    apply_virtual_shift=wl_defaults.apply_virtual_shift,
+                    snap_tolerance=wl_defaults.snap_tolerance,
+                    gantry_reference=wl_defaults.gantry_reference,
+                    collimator_reference=wl_defaults.collimator_reference,
+                    couch_reference=wl_defaults.couch_reference,
+                    dicom_file_count=dicom_count,
+                    runfolder_mtime_val=runfolder_mtime(runfolder),
+                )
+            st.session_state["wl_result"] = result
+            st.session_state["wl_machine"] = machine_key
+            st.rerun()
+        except Exception:
+            logging.exception("Winston-Lutz analysis failed in Advanced mode")
+            summary = _safe_error_message()
+            st.error(f"Analysis failed: {summary}")
 
     return machine_key, None
 
@@ -404,7 +410,7 @@ def _handle_rerun(
     machine_key: str,
     params: dict,
     prev_result: WLAnalysisResult,
-) -> WLAnalysisResult:
+) -> WLAnalysisResult | None:
     """7.8 Re-run analysis handler — invalidates wl_obj, calls cached run."""
     # Clear the lazy wl_obj so it reloads with new params
     st.session_state.pop("wl_obj", None)
@@ -412,21 +418,27 @@ def _handle_rerun(
     runfolder = Path(prev_result.runfolder_path)
     dicom_count = count_dicoms(runfolder)
 
-    result = run_wl_analysis_cached(
-        machine_id=machine_key,
-        runfolder_path=str(runfolder),
-        bb_size_mm=params["bb_size_mm"],
-        machine_scale=params["machine_scale"],
-        low_density_bb=params["low_density_bb"],
-        open_field=params["open_field"],
-        apply_virtual_shift=params["apply_virtual_shift"],
-        snap_tolerance=params["snap_tolerance"],
-        gantry_reference=params["gantry_reference"],
-        collimator_reference=params["collimator_reference"],
-        couch_reference=params["couch_reference"],
-        dicom_file_count=dicom_count,
-        runfolder_mtime_val=runfolder_mtime(runfolder),
-    )
+    try:
+        with st.spinner("Running Winston-Lutz analysis..."):
+            result = run_wl_analysis_cached(
+                machine_id=machine_key,
+                runfolder_path=str(runfolder),
+                bb_size_mm=params["bb_size_mm"],
+                machine_scale=params["machine_scale"],
+                low_density_bb=params["low_density_bb"],
+                open_field=params["open_field"],
+                apply_virtual_shift=params["apply_virtual_shift"],
+                snap_tolerance=params["snap_tolerance"],
+                gantry_reference=params["gantry_reference"],
+                collimator_reference=params["collimator_reference"],
+                couch_reference=params["couch_reference"],
+                dicom_file_count=dicom_count,
+                runfolder_mtime_val=runfolder_mtime(runfolder),
+            )
+    except Exception:
+        logging.exception("Winston-Lutz re-run failed in Advanced mode")
+        st.error(f"Analysis failed: {_safe_error_message()}")
+        return prev_result  # keep the old result so tabs still render
 
     # Detect cache short-circuit
     if result == prev_result:
