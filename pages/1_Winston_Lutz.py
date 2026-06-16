@@ -20,6 +20,7 @@ from core.ui_utils import render_mode_toggle
 from core.wl_runner import (
     count_dicoms,
     find_newest_runfolder,
+    list_runfolders,
     load_wl_object,
     run_wl_analysis,
     runfolder_mtime,
@@ -298,13 +299,49 @@ def _advanced_initial_run(
     machine = config.machines[machine_key]
     wl_defaults = config.wl_defaults
     dicom_root = Path(machine.dicom_roots["winston_lutz"])
-    runfolder = find_newest_runfolder(dicom_root)
+
+    # --- Folder picker: selectbox of auto-discovered runfolders ---
+    runfolders = list_runfolders(dicom_root)
+    runfolder: Path | None = None
+    custom_path = ""
+
+    if runfolders:
+        # Default to newest; show folder names sorted newest-first
+        default_idx = 0
+        folder_labels = [p.name for p in runfolders]
+        selected_label = st.sidebar.selectbox(
+            "Runfolder",
+            options=folder_labels,
+            index=default_idx,
+            key="wl_runfolder_select",
+            help="Choose a runfolder from the DICOM root, or enter a custom path below.",
+        )
+        runfolder = runfolders[folder_labels.index(selected_label)]
+    else:
+        st.sidebar.warning(f"No runfolders found under `{dicom_root}`.")
+
+    # --- Custom path override (for folders outside dicom_root) ---
+    custom_path = st.sidebar.text_input(
+        "Or enter custom folder path",
+        value="",
+        placeholder="/path/to/dicom/runfolder",
+        key="wl_custom_runfolder",
+        help="Override the selected runfolder with an absolute path to any DICOM folder.",
+    )
+    if custom_path.strip():
+        custom = Path(custom_path.strip())
+        if custom.is_dir():
+            runfolder = custom
+        else:
+            st.sidebar.error(f"Path does not exist: `{custom}`")
+            return machine_key, None
+
     if runfolder is None:
-        st.error(f"No runfolders found for {machine_key}.")
+        st.error("No runfolder selected. Enter a custom path above.")
         return machine_key, None
 
     dicom_count = count_dicoms(runfolder)
-    st.info(f"Will analyze: `{runfolder.name}` ({dicom_count} DICOMs)")
+    st.info(f"Will analyze: `{runfolder}` ({dicom_count} DICOMs)")
 
     if st.sidebar.button("Run analysis", type="primary"):
         try:

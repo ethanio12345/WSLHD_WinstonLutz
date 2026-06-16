@@ -32,6 +32,22 @@ logger = logging.getLogger(__name__)
 _DICOM_GLOBS = ("*.dcm", "*.dicom", "*.DCM")
 
 
+def list_runfolders(dicom_root: Path) -> list[Path]:
+    """Return all immediate subdirectories of ``dicom_root`` sorted newest-first.
+
+    Args:
+        dicom_root: A machine's ``winston_lutz`` DICOM root directory.
+
+    Returns:
+        Subdirectories sorted by mtime (newest first). Empty list if the root
+        does not exist or contains no subdirectories.
+    """
+    if not dicom_root.exists():
+        return []
+    subdirs = [p for p in dicom_root.iterdir() if p.is_dir()]
+    return sorted(subdirs, key=lambda p: p.stat().st_mtime, reverse=True)
+
+
 def find_newest_runfolder(dicom_root: Path) -> Path | None:
     """Return the immediate subdirectory of ``dicom_root`` with the newest mtime.
 
@@ -41,12 +57,8 @@ def find_newest_runfolder(dicom_root: Path) -> Path | None:
     Returns:
         The newest subdirectory by mtime, or ``None`` if no subdirs exist.
     """
-    if not dicom_root.exists():
-        return None
-    subdirs = [p for p in dicom_root.iterdir() if p.is_dir()]
-    if not subdirs:
-        return None
-    return max(subdirs, key=lambda p: p.stat().st_mtime)
+    folders = list_runfolders(dicom_root)
+    return folders[0] if folders else None
 
 
 def count_dicoms(runfolder: Path) -> int:
