@@ -208,6 +208,13 @@ def load_config(path: Path) -> AppConfig:
     """
     if not path.exists():
         raise ConfigError(f"Configuration file not found: {path}")
+    if path.is_dir():
+        raise ConfigError(
+            f"Configuration path is a directory, not a file: {path}. "
+            "This can happen if Docker Compose bind-mounted a non-existent file "
+            "(Docker auto-creates it as a directory). Run: "
+            "cp machines.yaml.example machines.yaml"
+        )
 
     try:
         raw: dict[str, Any] = yaml.safe_load(path.read_text(encoding="utf-8"))

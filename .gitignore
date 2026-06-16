@@ -25,6 +25,9 @@ machines.yaml
 # Generated output (the app writes xlsx/xltx here at runtime)
 out/
 
+# Generated test fixtures (run: uv run python scripts/generate_test_data.py)
+tests/fixtures/
+
 # Streamlit
 .streamlit/
 
