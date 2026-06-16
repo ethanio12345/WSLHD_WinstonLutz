@@ -5,6 +5,11 @@ x-app-base: &app-base
   volumes:
     # DICOM — matches dicom_roots.winston_lutz in machines.yaml
     - /mnt/va_transfer_ro/LA2/DICOMRT/01 Weekly:/mnt/va_transfer_ro/LA2/DICOMRT/01 Weekly:ro
+    - /mnt/va_transfer_ro/LA3/DICOMRT/01 Weekly:/mnt/va_transfer_ro/LA3/DICOMRT/01 Weekly:ro
+    - /mnt/va_transfer_ro/LA4/DICOMRT/01 Weekly:/mnt/va_transfer_ro/LA4/DICOMRT/01 Weekly:ro
+    - /mnt/va_transfer_ro/LA5/DICOMRT/01 Weekly:/mnt/va_transfer_ro/LA5/DICOMRT/01 Weekly:ro
+    - "/mnt/va_transfer_ro/OBK/DICOMRT/myQA Fields/W-L_Test:/mnt/va_transfer_ro/OBK/DICOMRT/myQA Fields/W-L_Test:ro"
+    - /mnt/va_transfer_ro/CST/DICOMRT/01 Weekly:/mnt/va_transfer_ro/CST/DICOMRT/01 Weekly:ro
     # Output — matches output.root in machines.yaml
     - /mnt/va_transfer_physics_qa/05 LA2/Pylinac:/mnt/va_transfer_physics_qa/05 LA2/Pylinac:rw
     # Config
