@@ -26,7 +26,6 @@ def wait_for_streamlit(page: Page, timeout: int = 30) -> None:
     """Wait for Streamlit to fully load (app runner ready)."""
     deadline = time.time() + timeout
     while time.time() < deadline:
-        # Streamlit shows [data-testid="stAppViewContainer"] when ready
         try:
             page.wait_for_selector('[data-testid="stAppViewContainer"]', timeout=5000)
             return
@@ -35,15 +34,14 @@ def wait_for_streamlit(page: Page, timeout: int = 30) -> None:
     raise TimeoutError(f"Streamlit did not load within {timeout}s")
 
 
-def click_streamlit_button(page: Page, text: str, timeout: int = 10) -> bool:
-    """Click a Streamlit button by its text label."""
+def safe_screenshot(page: Page, path: str) -> str | None:
+    """Take a viewport screenshot. Returns path or None on failure."""
     try:
-        btn = page.locator(f'button:has-text("{text}")').first
-        btn.wait_for(state="visible", timeout=timeout * 1000)
-        btn.click()
-        return True
+        page.screenshot(path=path, full_page=False, timeout=10000)
+        return path
     except Exception:
-        return False
+        print(f"   (screenshot failed: {path})", flush=True)
+        return None
 
 
 def get_streamlit_text(page: Page) -> str:
@@ -55,23 +53,25 @@ def get_streamlit_text(page: Page) -> str:
 
 
 def run_smoke_test() -> int:
-    output_dir = Path("/tmp/wl_test_env/out")
+    # Use /tmp/wl_output (matches machines.yaml output.root)
+    output_dir = Path("/tmp/wl_output")
+    screenshots: list[str] = []
+    errors: list[str] = []
 
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True)
         page = browser.new_page(viewport={"width": 1280, "height": 900})
-        errors: list[str] = []
-        screenshots: list[str] = []
 
         try:
             # === 1. Home page ===
             print("1. Navigating to home page...", flush=True)
-            page.goto("http://localhost:8501", wait_until="networkidle", timeout=30000)
+            page.goto("http://localhost:8501", wait_until="domcontentloaded", timeout=30000)
             wait_for_streamlit(page)
-            time.sleep(2)  # let Streamlit settle
+            time.sleep(3)  # let Streamlit settle
 
-            page.screenshot(path="/tmp/wl_smoke_01_home.png", full_page=True)
-            screenshots.append("/tmp/wl_smoke_01_home.png")
+            s = safe_screenshot(page, "/tmp/wl_smoke_01_home.png")
+            if s:
+                screenshots.append(s)
 
             body_text = page.inner_text("body")
             if "WSLHD Winston-Lutz QA" not in body_text:
@@ -79,7 +79,6 @@ def run_smoke_test() -> int:
             else:
                 print("   ✓ Home page renders with title", flush=True)
 
-            # Check for startup error
             if "Startup check failed" in body_text:
                 errors.append(f"Startup failed: {body_text[:200]}")
             else:
@@ -92,17 +91,17 @@ def run_smoke_test() -> int:
             if wl_link.count() > 0:
                 wl_link.click()
             else:
-                # Try via [data-testid="stSidebarNavLink"]
                 nav_links = page.locator('[data-testid="stSidebarNavLink"]')
                 count = nav_links.count()
                 print(f"   Found {count} nav links", flush=True)
                 if count > 0:
-                    nav_links.first.click()
+                    nav_links.first.nth(1).click() if count > 1 else nav_links.first.click()
 
-            page.wait_for_load_state("networkidle", timeout=15000)
+            page.wait_for_load_state("domcontentloaded", timeout=15000)
             time.sleep(3)
-            page.screenshot(path="/tmp/wl_smoke_02_wl_page.png", full_page=True)
-            screenshots.append("/tmp/wl_smoke_02_wl_page.png")
+            s = safe_screenshot(page, "/tmp/wl_smoke_02_wl_page.png")
+            if s:
+                screenshots.append(s)
 
             body_text = page.inner_text("body")
             if "Winston-Lutz" not in body_text:
@@ -114,7 +113,7 @@ def run_smoke_test() -> int:
             print("3. Checking runfolder preview...", flush=True)
             time.sleep(2)
             body_text = page.inner_text("body")
-            if "Will analyze" in body_text or "2026-06-16" in body_text:
+            if "Will analyze" in body_text or "demo_clinical" in body_text:
                 print("   ✓ Runfolder preview visible", flush=True)
             elif "No runfolders" in body_text:
                 errors.append("No runfolders found (DICOM generation may have failed)")
@@ -123,23 +122,23 @@ def run_smoke_test() -> int:
 
             # === 4. Click the analysis button ===
             print("4. Clicking analysis button...", flush=True)
-            page.screenshot(path="/tmp/wl_smoke_03_before_analysis.png", full_page=True)
+            safe_screenshot(page, "/tmp/wl_smoke_03_before_analysis.png")
 
             # The button text is long — use partial match
             btn = page.locator('button:has-text("Shut Up")').first
             if btn.count() == 0:
                 btn = page.locator('button:has-text("MyQA")').first
             if btn.count() == 0:
-                # Maybe disabled — check for any primary button
                 btn = page.locator('button[kind="primary"]').first
 
             if btn.count() > 0:
                 btn.click()
                 print("   Button clicked, waiting for analysis...", flush=True)
-                # Analysis takes ~5-30s with synthetic DICOMs
-                time.sleep(15)
-                page.screenshot(path="/tmp/wl_smoke_04_after_analysis.png", full_page=True)
-                screenshots.append("/tmp/wl_smoke_04_after_analysis.png")
+                # Analysis takes ~15-40s with 17 DICOM images
+                time.sleep(20)
+                s = safe_screenshot(page, "/tmp/wl_smoke_04_after_analysis.png")
+                if s:
+                    screenshots.append(s)
 
                 body_text = page.inner_text("body")
                 if "Analysis complete" in body_text or "Max 2D" in body_text:
@@ -165,7 +164,6 @@ def run_smoke_test() -> int:
             if xltx_files:
                 print(f"   ✓ xltx paired: {xltx_files[0]}", flush=True)
             else:
-                # Not necessarily an error if analysis didn't run
                 print("   (no xltx file yet)", flush=True)
 
             # === 6. Switch to Advanced mode ===
@@ -175,7 +173,7 @@ def run_smoke_test() -> int:
             if adv_btn.count() > 0:
                 adv_btn.click()
                 time.sleep(5)
-                page.wait_for_load_state("networkidle", timeout=15000)
+                page.wait_for_load_state("domcontentloaded", timeout=15000)
             else:
                 # Toggle mode in sidebar
                 radio = page.locator('label:has-text("Advanced")').first
@@ -183,8 +181,9 @@ def run_smoke_test() -> int:
                     radio.click()
                     time.sleep(3)
 
-            page.screenshot(path="/tmp/wl_smoke_05_advanced.png", full_page=True)
-            screenshots.append("/tmp/wl_smoke_05_advanced.png")
+            s = safe_screenshot(page, "/tmp/wl_smoke_05_advanced.png")
+            if s:
+                screenshots.append(s)
 
             body_text = page.inner_text("body")
             if "Advanced" in body_text:
@@ -200,7 +199,6 @@ def run_smoke_test() -> int:
                 tab_texts = [tabs.nth(i).inner_text() for i in range(tab_count)]
                 print(f"   ✓ Found {tab_count} tabs: {tab_texts}", flush=True)
             else:
-                # Tabs might not render if no result — check for the tab labels in text
                 body_text = page.inner_text("body")
                 found_tabs = [
                     t for t in ["Overview", "Per-image", "Plots", "Detection"] if t in body_text
@@ -217,14 +215,19 @@ def run_smoke_test() -> int:
                 if tab.count() > 0:
                     tab.click()
                     time.sleep(2)
-                    page.screenshot(
-                        path=f"/tmp/wl_smoke_06_tab_{tab_name.lower()}.png", full_page=True
+                    s = safe_screenshot(
+                        page, f"/tmp/wl_smoke_06_tab_{tab_name.lower().replace('-', '_')}.png"
                     )
+                    if s:
+                        screenshots.append(s)
                     print(f"   ✓ Clicked tab: {tab_name}", flush=True)
 
         except Exception as exc:
             errors.append(f"Exception during test: {exc}")
-            page.screenshot(path="/tmp/wl_smoke_error.png", full_page=True)
+            import traceback
+
+            traceback.print_exc()
+            safe_screenshot(page, "/tmp/wl_smoke_error.png")
         finally:
             browser.close()
 

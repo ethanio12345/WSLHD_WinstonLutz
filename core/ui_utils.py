@@ -31,15 +31,26 @@ def render_mode_toggle() -> str:
 
     Defaults to Simple. Persisted in ``st.session_state["mode"]``.
 
+    To programmatically switch modes (e.g. from a button in another part of
+    the page), set ``st.session_state["wl_mode_switch"]`` to the target mode
+    and call ``st.rerun()``. This function checks for that pending request
+    **before** the radio widget renders, avoiding Streamlit's
+    ``StreamlitAPIException`` on widget-key mutation.
+
     Returns:
         The selected mode string (``"simple"`` or ``"advanced"``).
     """
     st.sidebar.title("WL QA")
+    # Apply pending mode switch (set by buttons elsewhere in the page)
+    pending = st.session_state.pop("wl_mode_switch", None)
+    if pending is not None:
+        st.session_state["mode"] = pending
+    if "mode" not in st.session_state:
+        st.session_state["mode"] = "simple"
     mode = st.sidebar.radio(
         "Mode",
         options=["simple", "advanced"],
         format_func=lambda m: "Simple" if m == "simple" else "Advanced",
-        index=0 if st.session_state.get("mode", "simple") == "simple" else 1,
         key="mode",
     )
     return mode

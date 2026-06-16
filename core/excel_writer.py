@@ -163,6 +163,8 @@ def write_session_output(
     set_named_cell(wb, "template_version", TEMPLATE_VERSION)
 
     # 3. Add per-image sheets (header-based table: field in A, value in B)
+    # Fields to exclude from Excel output (internal noise, not clinical data)
+    _EXCLUDE_FIELDS = {"warnings", "pylinac_version", "date_of_analysis"}
     for key, detail in zip(result.image_keys, result.image_details, strict=True):
         safe_name = sanitise_sheet_name(key)
         # Avoid duplicate sheet names (append index if collision)
@@ -176,9 +178,9 @@ def write_session_output(
         ws.column_dimensions["B"].width = 28
         ws["A1"] = "Field"
         ws["B1"] = "Value"
-        for row_idx, (field, val) in enumerate(sorted(detail.items()), start=2):
+        filtered = {k: v for k, v in detail.items() if k not in _EXCLUDE_FIELDS}
+        for row_idx, (field, val) in enumerate(sorted(filtered.items()), start=2):
             ws.cell(row=row_idx, column=1, value=str(field))
-            # Serialize nested dicts/lists to string — openpyxl can't write them directly
             cell_val: Any = _serialize_for_excel(val)
             ws.cell(row=row_idx, column=2, value=cell_val)
 

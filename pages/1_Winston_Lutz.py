@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
+from typing import Any
 
 import streamlit as st
 
@@ -187,7 +188,7 @@ def _render_success_card(
     # 6.6 Hand-off to Advanced mode
     if st.button("View in Advanced mode"):
         st.session_state["wl_result"] = result
-        st.session_state["mode"] = "advanced"
+        st.session_state["wl_mode_switch"] = "advanced"
         st.rerun()
 
 
@@ -540,8 +541,7 @@ def _render_per_image_tab(result: WLAnalysisResult, config: AppConfig) -> None:
         if wl_obj is not None:
             idx = result.image_keys.index(selected_key)
             try:
-                fig = wl_obj.images[idx].plot()
-                st.pyplot(fig)
+                _render_wl_image(wl_obj, idx)
             except Exception:
                 logger.exception("Failed to render image %s", selected_key)
                 st.warning(f"Could not render image {selected_key}.")
@@ -573,23 +573,33 @@ def _render_plots_tab(result: WLAnalysisResult) -> None:
     # (b) BB X vs Y scatter
     scatter = result.bb_xy_scatter
     if scatter.get("x"):
+        # Deterministic color assignment based on variable_axis label
+        axis_labels = scatter.get("color", [])
+        unique_axes = sorted({str(a) for a in axis_labels})
+        axis_to_idx = {label: i for i, label in enumerate(unique_axes)}
+        color_indices = [axis_to_idx.get(str(a), 0) for a in axis_labels]
+
         fig2 = go.Figure(
             data=go.Scatter(
                 x=scatter["x"],
                 y=scatter["y"],
                 mode="markers",
                 marker={
-                    "color": [hash(str(c)) % 10 for c in scatter.get("color", [])],
+                    "color": color_indices,
                     "colorscale": "Viridis",
+                    "showscale": True,
+                    "colorbar": {"title": "Axis"},
+                    "tickvals": list(range(len(unique_axes))),
+                    "ticktext": unique_axes,
                 },
-                text=scatter.get("color"),
+                text=axis_labels,
                 hovertemplate="X: %{x:.2f}, Y: %{y:.2f}<br>%{text}<extra></extra>",
             )
         )
         fig2.update_layout(
             title="BB X vs Y deviation",
-            xaxis_title="BB X deviation (mm)",
-            yaxis_title="BB Y deviation (mm)",
+            xaxis_title="CAX→BB X (mm)",
+            yaxis_title="CAX→BB Y (mm)",
         )
         st.plotly_chart(fig2, use_container_width=True)
 
@@ -619,9 +629,7 @@ def _render_detection_tab(result: WLAnalysisResult, params: dict) -> None:
         col = cols[i % 4]
         with col:
             try:
-                fig = wl_obj.images[i].plot()
-                st.caption(key)
-                st.pyplot(fig)
+                _render_wl_image(wl_obj, i, caption=key)
             except Exception:
                 logger.exception("Failed to render detection overlay %s", key)
                 st.warning(f"Could not render {key}.")
@@ -640,8 +648,7 @@ def _show_image_dialog(wl_obj, idx: int, key: str) -> None:  # type: ignore[no-u
         @st.dialog(f"Image {key}", width="large")
         def _dialog():
             try:
-                fig = wl_obj.images[idx].plot()
-                st.pyplot(fig)
+                _render_wl_image(wl_obj, idx)
             except Exception:
                 st.error("Could not render image.")
             if st.button("Close"):
@@ -653,6 +660,23 @@ def _show_image_dialog(wl_obj, idx: int, key: str) -> None:  # type: ignore[no-u
 # ---------------------------------------------------------------------------
 # Lazy wl_obj init (7.6)
 # ---------------------------------------------------------------------------
+
+
+def _render_wl_image(wl_obj: Any, idx: int, caption: str | None = None) -> None:
+    """Render a single pylinac WL image via matplotlib → st.pyplot.
+
+    pylinac's ``WinstonLutz2D.plot()`` returns a matplotlib Axes (not a Figure),
+    so we extract ``ax.figure`` for ``st.pyplot``.
+    """
+    import matplotlib.pyplot as plt
+
+    ax = wl_obj.images[idx].plot()
+    # plot() may return Axes or None depending on pylinac version
+    fig = ax.figure if hasattr(ax, "figure") else plt.gcf()
+    if caption:
+        st.caption(caption)
+    st.pyplot(fig, use_container_width=True)
+    plt.close(fig)
 
 
 def _get_wl_obj(result: WLAnalysisResult):  # type: ignore[no-untyped-def]

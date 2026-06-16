@@ -144,11 +144,32 @@ def _build_analyze_kwargs(params: dict[str, Any]) -> dict[str, Any]:
     return kwargs
 
 
+def _parse_axis_from_key(key: str, axis: str) -> float:
+    """Extract a single axis value from an image key like ``G0.0B0.0P0.0``.
+
+    Args:
+        key: Image key in ``G{gantry}B{coll}P{couch}`` format.
+        axis: One of ``"G"``, ``"B"``, ``"P"``.
+
+    Returns:
+        The float value for that axis, or 0.0 if not parseable.
+    """
+    import re
+
+    match = re.search(rf"{axis}(-?[\d.]+)", key)
+    return float(match.group(1)) if match else 0.0
+
+
 def _precompute_plotly_arrays(
     image_details: list[dict[str, Any]],
     image_keys: list[str],
 ) -> tuple[dict[str, list[Any]], dict[str, list[Any]], dict[str, list[Any]]]:
     """Build the three Plotly-ready arrays from per-image details.
+
+    pylinac's ``keyed_image_details`` does not include ``gantry_angle`` /
+    ``collimator_angle`` / ``couch_angle`` as separate fields — the angles are
+    encoded in the image key (``G0.0B0.0P0.0``).  CAX→BB X/Y components live in
+    the nested ``cax2bb_vector`` dict.
 
     Returns:
         ``(deviation_vs_gantry, bb_xy_scatter, distance_histogram)``
@@ -157,24 +178,28 @@ def _precompute_plotly_arrays(
     dev_y: list[Any] = []  # cax2bb distances
     dev_text: list[Any] = []  # image keys
 
-    scatter_x: list[Any] = []  # BB X deviation
-    scatter_y: list[Any] = []  # BB Y deviation
-    scatter_color: list[Any] = []  # variable axis
+    scatter_x: list[Any] = []  # CAX→BB X component
+    scatter_y: list[Any] = []  # CAX→BB Y component
+    scatter_color: list[Any] = []  # variable axis label
 
     hist_values: list[Any] = []  # all cax2bb distances
 
     for detail, key in zip(image_details, image_keys, strict=False):
-        gantry = detail.get("gantry_angle", 0)
+        gantry = _parse_axis_from_key(key, "G")
         cax2bb = detail.get("cax2bb_distance", 0.0)
 
         dev_x.append(gantry)
         dev_y.append(cax2bb)
         dev_text.append(key)
 
-        # BB X/Y deviation: pylinac provides this in some detail variants.
-        # Fall back to 0 if absent (older pylinac versions).
-        scatter_x.append(detail.get("bb_x_deviation", 0.0))
-        scatter_y.append(detail.get("bb_y_deviation", 0.0))
+        # CAX→BB vector components (pylinac nested dict with x/y/z keys)
+        vec = detail.get("cax2bb_vector", {})
+        if isinstance(vec, dict):
+            scatter_x.append(vec.get("x", 0.0))
+            scatter_y.append(vec.get("y", 0.0))
+        else:
+            scatter_x.append(0.0)
+            scatter_y.append(0.0)
         scatter_color.append(detail.get("variable_axis", "None"))
 
         hist_values.append(cax2bb)
@@ -326,10 +351,13 @@ def run_wl_analysis(
 
 
 def _derive_image_key(detail: dict[str, Any]) -> str:
-    """Derive a ``G{gantry}B{coll}P{couch}`` key from image detail fields."""
-    g = int(detail.get("gantry_angle", 0))
-    b = int(detail.get("collimator_angle", 0))
-    p = int(detail.get("couch_angle", 0))
+    """Derive a ``G{gantry}B{coll}P{couch}`` key from image detail fields.
+
+    Used as fallback when pylinac's ``keyed_image_details`` is not available.
+    """
+    g = detail.get("gantry_angle", 0)
+    b = detail.get("collimator_angle", 0)
+    p = detail.get("couch_angle", 0)
     return f"G{g}B{b}P{p}"
 
 
