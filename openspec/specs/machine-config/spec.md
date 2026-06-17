@@ -6,13 +6,14 @@ Configure machines, output paths, analysis defaults, and asset paths for the pyl
 
 The app SHALL load `machines.yaml` at startup and validate it against a pydantic schema. The schema SHALL enforce:
 
-- `machines`: a map of machine key (e.g. `LA2`) to a machine object with `display_name` (str) and `dicom_roots` (dict keyed by module name with absolute path values). Each machine's `dicom_roots` MUST contain at least one module root (currently `winston_lutz` and/or `catphan`; future modules may add additional accepted keys); a machine with an empty `dicom_roots` is invalid.
+- `machines`: a map of machine key (e.g. `LA2`) to a machine object with `display_name` (str) and `dicom_roots` (dict keyed by module name with absolute path values). Each machine's `dicom_roots` MUST contain at least one module root (currently `winston_lutz`, `catphan`, and/or `field_profile`); a machine with an empty `dicom_roots` is invalid.
 - `output.root`: absolute path to the output directory (container path)
 - `analysis_defaults.winston_lutz`: dict where `bb_size_mm` (float) and `machine_scale` (enum: `VARIAN_IEC`, `VARIAN_STANDARD`, `IEC61217` — consult pylinac's `MachineScale` enum for the authoritative list) are required, `tolerance_mm` (float, UI-only) is required, and all other pylinac `analyze()` parameters (`low_density_bb`, `open_field`, `apply_virtual_shift`, `snap_tolerance`, `gantry_reference`, `collimator_reference`, `couch_reference`) are optional and fall back to pylinac defaults if absent
 - `analysis_defaults.catphan`: dict where `hu_tolerance` (float), `scaling_tolerance` (float, mm), and `slice_thickness_tolerance` (float, mm) are required, and all other pylinac CatPhan `analyze()` parameters (`thickness_slice_straddle`, `expected_hu_values`, `x_adjustment`, `y_adjustment`, `angle_adjustment`, `roi_size_factor`, `scaling_factor`, `minimum_rois_seen`) are optional and fall back to pylinac defaults if absent. (No `tolerance_mm` UI-only field — CatPhan's pass/fail comes from pylinac's per-test tolerances, not a separate UI widget.) Required if any machine has `catphan` configured; otherwise absent.
+- `analysis_defaults.field_profile`: dict where `protocol` (enum: `VARIAN`, `SIEMENS`, `ELEKTA`) is required, and all other pylinac `FieldAnalysis.analyze()` parameters (`centering`, `in_field_ratio`, `penumbra`, `is_fff`, `interpolation`, `edge_detection_method`, `vert_position`, `horiz_position`, `vert_width`, `horiz_width`, `slope_exclusion_ratio`, `edge_smoothing_ratio`, `hill_window_ratio`) are optional and fall back to pylinac defaults if absent. (No pass/fail tolerances — field profile reports values only.) Required if any machine has `field_profile` configured; otherwise absent.
 - `assets.fry_meme_path` and `assets.logo_path`: absolute paths
 
-Each machine's configured `dicom_roots.*` path SHALL exist on the filesystem at startup (the app refuses to start if any configured machine's root is missing). `winston_lutz` and `catphan` are each independently optional per machine; a machine may have either, both, or (if a future module is added) neither — but MUST have at least one module root configured.
+Each machine's configured `dicom_roots.*` path SHALL exist on the filesystem at startup (the app refuses to start if any configured machine's root is missing). `winston_lutz`, `catphan`, and `field_profile` are each independently optional per machine; a machine may have any combination — but MUST have at least one module root configured.
 
 #### Scenario: Valid config with both modules
 
@@ -71,7 +72,7 @@ Each machine's configured `dicom_roots.*` path SHALL exist on the filesystem at 
 
 ### Requirement: Per-machine-per-module explicit DICOM roots
 
-Each machine's `dicom_roots` SHALL be a dict keyed by module name. Supported module keys are `winston_lutz` and `catphan`; future modules (FieldProfile, TrajectoryLog) will add additional keys. The config loader SHALL NOT infer or default missing module roots — they must be explicit so misconfigurations surface at load time. Each module root is independently optional; at least one must be present per machine.
+Each machine's `dicom_roots` SHALL be a dict keyed by module name. Supported module keys are `winston_lutz`, `catphan`, and `field_profile`; future modules (TrajectoryLog) will add additional keys. The config loader SHALL NOT infer or default missing module roots — they must be explicit so misconfigurations surface at load time. Each module root is independently optional; at least one must be present per machine.
 
 #### Scenario: Only WL configured
 
@@ -90,8 +91,8 @@ Each machine's `dicom_roots` SHALL be a dict keyed by module name. Supported mod
 
 #### Scenario: Future module key ignored (forward compatibility)
 
-- **WHEN** `machines.yaml` defines `dicom_roots: { winston_lutz: ..., catphan: ..., field_profile: ... }`
-- **THEN** the config loads successfully; the extra `field_profile` key is ignored until the FieldProfile page is added in a future change
+- **WHEN** `machines.yaml` defines `dicom_roots: { winston_lutz: ..., catphan: ..., trajectory_log: ... }`
+- **THEN** the config loads successfully; the extra `trajectory_log` key is ignored until the TrajectoryLog page is added in a future change
 
 ### Requirement: Config bind-mounted (no rebuild for updates)
 
