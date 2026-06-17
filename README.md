@@ -1,10 +1,10 @@
 # WSLHD Winston-Lutz QA
 
 A Streamlit web GUI that wraps [pylinac](https://pylinac.readthedocs.io/)'s
-`WinstonLutz` and `CatPhan504` modules for hospital physics QA. Provides a
-one-click **Simple mode** for routine QA and an **Advanced mode** for service
-investigations, producing MyQA-importable `.xlsx` output paired with a `.xltx`
-template.
+`WinstonLutz`, `CatPhan504`, and `FieldAnalysis` modules for hospital physics
+QA. Provides a one-click **Simple mode** for routine QA and an **Advanced
+mode** for service investigations, producing MyQA-importable `.xlsx` output
+paired with a `.xltx` template.
 
 ## Modules
 
@@ -12,7 +12,10 @@ template.
   Advanced mode with detection overlays and Plotly charts
 - **CatPhan 504** (`pages/2_CatPhan.py`) — one-click CBCT analysis, 5-tab
   Advanced mode with per-CTP-module drill-down (CTP404/486/528/515)
-- *Coming soon:* Field Profile, Trajectory Log
+- **Field Profile** (`pages/3_Field_Profile.py`) — one-click flatness/symmetry
+  analysis on a single RT image, 4-tab Advanced mode (Overview, Profiles,
+  Field Map, ROI & Penumbra) with FFF auto-detection from DICOM metadata
+- *Coming soon:* Trajectory Log
 
 ## Quickstart
 
@@ -42,6 +45,7 @@ uv sync
 # Run the template generators (one-time)
 uv run python scripts/build_xltx_template.py
 uv run python scripts/build_catphan_xltx_template.py  # only if using CatPhan
+uv run python scripts/build_fp_xltx_template.py        # only if using Field Profile
 
 # Create a machines.yaml for local testing
 cp machines.yaml.example machines.yaml
@@ -57,13 +61,17 @@ See [`docs/CONFIGURATION.md`](docs/CONFIGURATION.md) for the full schema. Key
 sections:
 
 - **`machines`**: one entry per linac, each with `display_name` and
-  `dicom_roots` (paths to DICOM directories — `winston_lutz` and/or `catphan`)
+  `dicom_roots` (paths to DICOM directories — `winston_lutz`, `catphan`,
+  and/or `field_profile`)
 - **`output.root`**: where the paired `.xlsx`/`.xltx` files are written
 - **`analysis_defaults.winston_lutz`**: centre-wide WL pylinac parameters
   (`bb_size_mm`, `machine_scale`, `tolerance_mm`, and optional params)
 - **`analysis_defaults.catphan`**: centre-wide CatPhan pylinac parameters
   (`hu_tolerance`, `scaling_tolerance`, `slice_thickness_tolerance`, and optional
   params) — required if any machine has `catphan` configured
+- **`analysis_defaults.field_profile`**: centre-wide Field Profile pylinac
+  parameters (`protocol`, and optional params) — required if any machine has
+  `field_profile` configured
 - **`assets`**: paths to the Fry meme and logo
 
 ## Host file ownership
@@ -125,13 +133,16 @@ WSLHD_WinstonLutz/
   pages/
     1_Winston_Lutz.py         ← WL page (Simple + Advanced modes)
     2_CatPhan.py              ← CatPhan 504 page (Simple + Advanced modes)
+    3_Field_Profile.py        ← Field Profile page (Simple + Advanced modes)
   core/
     config.py                 ← machines.yaml loader + validator (pydantic)
     wl_runner.py              ← pylinac WinstonLutz wrapper
     cbct_runner.py            ← pylinac CatPhan504 wrapper
+    fp_runner.py              ← pylinac FieldAnalysis wrapper
     excel_writer.py           ← WL xltx copy + named-cell writer
     cbct_excel_writer.py      ← CatPhan xltx copy + per-CTP-module sheets
-    result_types.py           ← WLAnalysisResult + CatPhanAnalysisResult dataclasses
+    fp_excel_writer.py        ← Field Profile xltx copy + 4 data sheets
+    result_types.py           ← WL/CatPhan/FieldAnalysis result dataclasses
     runfolder.py              ← shared runfolder discovery utilities
     session_io.py             ← shared session output folder builder
     excel_helpers.py          ← shared set_named_cell + sanitise_sheet_name
@@ -140,11 +151,13 @@ WSLHD_WinstonLutz/
   templates/
     winston_lutz.xltx         ← WL Excel template (25 named cells)
     catphan_504.xltx          ← CatPhan Excel template (19 named cells)
+    field_profile.xltx        ← Field Profile Excel template (30 named cells)
   assets/
     fry_money.png             ← default Fry meme
   scripts/
     build_xltx_template.py    ← WL template generator
     build_catphan_xltx_template.py ← CatPhan template generator
+    build_fp_xltx_template.py ← Field Profile template generator
   tests/
     ...                       ← unit + integration tests for all modules
 ```

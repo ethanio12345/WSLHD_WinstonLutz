@@ -124,6 +124,48 @@ analysis_defaults:
     slice_thickness_tolerance: 0.5
 ```
 
+### 7. Field Profile template missing
+
+**Symptom:** `Field Profile template not found: templates/field_profile.xltx`
+
+**Cause:** A machine has `field_profile` configured but the Field Profile xltx
+template hasn't been generated yet.
+
+**Fix:** Generate the template:
+```bash
+uv run python scripts/build_fp_xltx_template.py
+```
+
+### 8. Field Profile module configured without defaults
+
+**Symptom:** `field_profile module configured for machine(s) but analysis_defaults.field_profile is missing`
+
+**Cause:** A machine has `field_profile` under `dicom_roots` but the
+`analysis_defaults.field_profile` section is absent from `machines.yaml`.
+
+**Fix:** Add the `field_profile` defaults section to `machines.yaml`:
+```yaml
+analysis_defaults:
+  field_profile:
+    protocol: VARIAN
+```
+
+### 9. Field analysis fails (field edges not detected)
+
+**Symptom:** Simple mode shows `Analysis failed: could not detect the field
+edges...`
+
+**Cause:** The selected image is not a valid RT portal image (e.g. a CT slice
+mistakenly placed in the FieldProfile directory), or the image quality is too
+poor for edge detection.
+
+**Fix:** Switch to Advanced mode for the full traceback, verify the selected
+image is a genuine RT portal image, or adjust the edge detection method /
+in-field ratio in the Advanced sidebar and re-run. If the image is an FFF beam
+mislabeled as flat (no Radiation Energy tag), tick "Force FFF analysis" in the
+sidebar — note a flat-beam analysis on an FFF image may also fail; in that case
+the FFF override resolves it.
+
 ## Enabling the CatPhan page
 
 The CatPhan page (`pages/2_CatPhan.py`) is auto-discovered by Streamlit and
@@ -139,6 +181,24 @@ To enable CatPhan for a machine:
 
 The CatPhan output path follows the same deep layout as WL:
 `/out/<CATEGORY>/<DISPLAY>/Pylinac/CatPhan/<MACHINE>_CP_<RUNFOLDER>/`
+
+## Enabling the Field Profile page
+
+The Field Profile page (`pages/3_Field_Profile.py`) is auto-discovered by
+Streamlit and always appears in the sidebar. However, the machine dropdown will
+be empty unless at least one machine has `field_profile` configured.
+
+To enable Field Profile for a machine:
+
+1. Add `field_profile:` under that machine's `dicom_roots` in `machines.yaml`
+   (pointing at the directory containing RT portal image runfolders)
+2. Add the `analysis_defaults.field_profile` section (at minimum `protocol: VARIAN`)
+3. Ensure `templates/field_profile.xltx` exists (run the generator if not)
+4. Restart the container: `docker compose restart streamlit`
+
+The Field Profile output path keys on the **image stem** (not the runfolder),
+since Field Analysis operates on a single DICOM:
+`<machine.output_root>/FP/<MACHINE>_FP_<IMAGE_STEM>/`
 
 ## Escalation paths
 

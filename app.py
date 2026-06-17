@@ -25,6 +25,7 @@ from core.config import (
     configure_logging,
     load_config,
     validate_catphan_template,
+    validate_fp_template,
     validate_template,
 )
 from core.ui_utils import render_asset
@@ -37,6 +38,7 @@ DEFAULT_CONFIG_PATH = os.environ.get("WL_CONFIG_PATH", "machines.yaml")
 #: Default template paths.
 DEFAULT_TEMPLATE_PATH = "templates/winston_lutz.xltx"
 DEFAULT_CATPHAN_TEMPLATE_PATH = "templates/catphan_504.xltx"
+DEFAULT_FP_TEMPLATE_PATH = "templates/field_profile.xltx"
 
 
 def main() -> None:
@@ -50,6 +52,7 @@ def main() -> None:
     config_path = Path(DEFAULT_CONFIG_PATH)
     template_path = Path(DEFAULT_TEMPLATE_PATH)
     catphan_template_path = Path(DEFAULT_CATPHAN_TEMPLATE_PATH)
+    fp_template_path = Path(DEFAULT_FP_TEMPLATE_PATH)
 
     # --- Startup checks ---
     try:
@@ -58,6 +61,9 @@ def main() -> None:
         # CatPhan template is only required if any machine has catphan configured
         if config.has_catphan():
             validate_catphan_template(catphan_template_path)
+        # Field Profile template is only required if any machine has field_profile configured
+        if config.has_field_profile():
+            validate_fp_template(fp_template_path)
     except ConfigError as exc:
         st.error(f"**Startup check failed:** {exc}")
         st.info(
@@ -66,7 +72,9 @@ def main() -> None:
             "- ``machines.yaml`` missing or invalid (copy from ``machines.yaml.example``)\n"
             "- DICOM root or output root not mounted (check ``docker-compose.yml`` volumes)\n"
             "- xltx template missing required defined names "
-            "(run ``scripts/build_xltx_template.py`` or ``scripts/build_catphan_xltx_template.py``)"
+            "(run ``scripts/build_xltx_template.py``, "
+            "``scripts/build_catphan_xltx_template.py``, or "
+            "``scripts/build_fp_xltx_template.py``)"
         )
         return
 
@@ -87,12 +95,19 @@ def main() -> None:
         st.write("• **CatPhan 504** — available (see the CatPhan page in the sidebar)")
     else:
         st.write("• CatPhan — *not configured (add ``catphan:`` to machines.yaml to enable)*")
-    st.write("• Field Profile, Trajectory Log — *coming soon*")
+    if config.has_field_profile():
+        st.write("• **Field Profile** — available (see the Field Profile page in the sidebar)")
+    else:
+        st.write(
+            "• Field Profile — *not configured (add ``field_profile:`` to machines.yaml to enable)*"
+        )
+    st.write("• Trajectory Log — *coming soon*")
 
     # Cache config + template path in session_state for pages
     st.session_state["wl_config"] = config
     st.session_state["wl_template_path"] = str(template_path)
     st.session_state["cp_template_path"] = str(catphan_template_path)
+    st.session_state["fp_template_path"] = str(fp_template_path)
 
 
 if __name__ == "__main__":

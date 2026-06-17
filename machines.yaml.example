@@ -11,9 +11,9 @@ machines:
       winston_lutz: /data/LA2/WinstonLutz
       # CatPhan is independently optional per machine. Uncomment to enable:
       # catphan: /data/LA2/CatPhan
-      # Future modules (additive; ignored until their page ships):
+      # Field Profile is independently optional per machine. Uncomment to enable:
       # field_profile: /data/LA2/FieldProfile
-    output_root: /data/LA2/output      # per-machine output (WL/CatPhan written as subfolders)
+    output_root: /data/LA2/output      # per-machine output (WL/CatPhan/FP written as subfolders)
 
 analysis_defaults:
   winston_lutz:
@@ -47,6 +47,25 @@ analysis_defaults:
   #   # roi_size_factor: 1.0
   #   # scaling_factor: 1.0
   #   # minimum_rois_seen: 3
+  # Field Profile defaults — required iff any machine has `field_profile` configured.
+  # Uncomment together with the field_profile dicom_root above to enable the Field Profile page.
+  # field_profile:
+  #   # Required key:
+  #   protocol: VARIAN              # one of: VARIAN, SIEMENS, ELEKTA
+  #   # Optional keys (fall back to pylinac defaults if absent):
+  #   # centering: BEAM_CENTER
+  #   # in_field_ratio: 0.8
+  #   # penumbra: [20, 80]
+  #   # is_fff: false                # default; auto-detected per image
+  #   # interpolation: LINEAR
+  #   # edge_detection_method: INFLECTION_DERIVATIVE
+  #   # vert_position: 0.5
+  #   # horiz_position: 0.5
+  #   # vert_width: 0
+  #   # horiz_width: 0
+  #   # slope_exclusion_ratio: 0.2
+  #   # edge_smoothing_ratio: 0.003
+  #   # hill_window_ratio: 0.15
 
 assets:
   fry_meme_path: /assets/fry_money.png

@@ -98,4 +98,49 @@ class CatPhanAnalysisResult:
     params_used: dict[str, Any] = field(default_factory=dict)
 
 
-__all__ = ["CatPhanAnalysisResult", "WLAnalysisResult"]
+@dataclass(frozen=True)
+class FieldAnalysisResult:
+    """Immutable Field Profile analysis result (design D4).
+
+    Unlike WL/CatPhan (one runfolder = one analysis), Field Analysis operates
+    on a single DICOM image, so the identity fields reference the image rather
+    than a runfolder of images.
+
+    Attributes:
+        machine_id: Machine key (e.g. ``"LA2"``).
+        image_path: Absolute path to the analysed DICOM image.
+        image_display_name: The dropdown display string (energy + RT label +
+            dimensions + spacing + filename).
+        session_date: ISO 8601 date string (from DICOM metadata or analysis date).
+        is_fff: Whether the analysis used FFF mode (auto-detected + override).
+        summary: Dict of the 29 named-cell metric values (flat, keyed by
+            named-cell name). The 30th cell (``template_version``) is added by
+            the excel writer.
+        vert_profile_values: Vertical profile dose values (normalized) for
+            Plotly rendering. Pre-sliced to ~500 points for performance.
+        horiz_profile_values: Horizontal profile dose values (normalized),
+            pre-sliced to ~500 points.
+        protocol_results: Flatness/symmetry sub-dict from pylinac's
+            ``protocol_results`` (4 values: vertical/horizontal flatness/symmetry).
+        params_used: Dict of the pylinac ``analyze()`` params used for this run
+            (for the "Analysed with: ..." display and sidebar repopulation).
+    """
+
+    # Identity
+    machine_id: str
+    image_path: str
+    image_display_name: str
+    session_date: str
+    is_fff: bool
+    # Summary (the 29 named-cell values, flat)
+    summary: dict[str, float | int | str]
+    # Profile data (precomputed for Plotly; downsampled)
+    vert_profile_values: list[float] = field(default_factory=list)
+    horiz_profile_values: list[float] = field(default_factory=list)
+    # Protocol sub-dict (flatness/symmetry, 4 values)
+    protocol_results: dict[str, float] = field(default_factory=dict)
+    # Parameters used (for display + sidebar repopulation)
+    params_used: dict[str, Any] = field(default_factory=dict)
+
+
+__all__ = ["CatPhanAnalysisResult", "FieldAnalysisResult", "WLAnalysisResult"]

@@ -24,6 +24,7 @@ from pathlib import Path
 MODULE_DISPATCH: dict[str, tuple[str, str]] = {
     "winston_lutz": ("WL", "WL"),
     "catphan": ("CatPhan", "CP"),
+    "field_profile": ("FP", "FP"),
 }
 
 
