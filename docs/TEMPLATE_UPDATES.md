@@ -58,7 +58,7 @@ Copy the updated `.xltx` to the templates directory on the host:
 
 ```bash
 cp templates/winston_lutz.xltx /mnt/hospital/RT_Templates/
-docker compose restart streamlit
+docker compose restart winston_lutz
 ```
 
 No image rebuild is required — the template is bind-mounted read-only.

@@ -16,11 +16,6 @@ machines:
       # config below). A legacy `field_profile` entry here is silently ignored.
     output_root: /data/LA2/output      # per-machine output (WL/CatPhan written as subfolders)
 
-# Field Profile page config (decoupled from machines). The page is always
-# available; this optional section configures the cascading folder browser root.
-field_profile:
-  browse_root: /data                   # root of the cascading folder browser (default: /data)
-
   LA3:
     display_name: "LA3"
     dicom_roots:
@@ -56,6 +51,11 @@ field_profile:
   #   dicom_roots:
   #     winston_lutz: /data/RAINFOREST/WinstonLutz
   #   output_root: /data/RAINFOREST/output
+
+# Field Profile page config (decoupled from machines). The page is always
+# available; this optional section configures the cascading folder browser root.
+field_profile:
+  browse_root: /data                   # root of the cascading folder browser (default: /data)
 
 analysis_defaults:
   winston_lutz:

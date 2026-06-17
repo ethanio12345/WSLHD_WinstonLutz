@@ -120,10 +120,12 @@ WSLHD_WinstonLutz/
   pages/
     1_Winston_Lutz.py         ← WL page (Simple + Advanced modes)
     2_CatPhan.py              ← CatPhan 504 page (Simple + Advanced modes)
+    3_Field_Profile.py        ← FP page (Simple + Advanced; general-purpose, decoupled)
   core/
     config.py                 ← machines.yaml loader + validator (pydantic)
     wl_runner.py              ← pylinac WinstonLutz wrapper
     cbct_runner.py            ← pylinac CatPhan504 wrapper
+    fp_runner.py              ← pylinac FieldAnalysis wrapper
     excel_writer.py           ← WL xltx copy + named-cell writer
     cbct_excel_writer.py      ← CatPhan xltx copy + per-CTP-module sheets
     fp_excel_writer.py        ← Field Profile in-memory xlsx bytes (browser download)
@@ -136,11 +138,13 @@ WSLHD_WinstonLutz/
   templates/
     winston_lutz.xltx         ← WL Excel template (25 named cells)
     catphan_504.xltx          ← CatPhan Excel template (19 named cells)
+    field_profile.xltx        ← FP Excel template (30 named cells)
   assets/
     fry_money.png             ← default Fry meme
   scripts/
     build_xltx_template.py    ← WL template generator
     build_catphan_xltx_template.py ← CatPhan template generator
+    build_fp_xltx_template.py ← FP template generator
   tests/
     ...                       ← unit + integration tests for all modules
 ```

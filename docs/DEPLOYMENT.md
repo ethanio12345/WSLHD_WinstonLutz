@@ -149,15 +149,20 @@ uv run python scripts/build_fp_xltx_template.py
 **Cause:** The configured `field_profile.browse_root` (default `/data`) isn't
 mounted in the container, or the host path doesn't exist.
 
-**Fix:** Verify the volume mount in `docker-compose.yml` and that the host
-directory exists, then set `field_profile.browse_root` in `machines.yaml` to
-point at the mounted DICOM share:
+**Fix:** Set `field_profile.browse_root` in `machines.yaml` to point at the
+mounted DICOM share (the same share as `dicom_roots` — `/mnt/va_transfer_ro`
+in the standard deployment):
 ```yaml
 field_profile:
-  browse_root: /data    # container path to the DICOM share
+  browse_root: /mnt/va_transfer_ro    # container path to the DICOM share
 ```
+Then restart:
 ```bash
-docker compose exec streamlit ls /data
+docker compose restart winston_lutz
+```
+Verify the mount is readable inside the container:
+```bash
+docker compose exec winston_lutz ls /mnt/va_transfer_ro
 ```
 
 ### 9. Field analysis fails (field edges not detected)
@@ -217,13 +222,14 @@ image folder via a cascading selectbox browser rooted at
 
 To customise the Field Profile page:
 
-1. Optionally set `field_profile.browse_root` in `machines.yaml` to point at
-   your DICOM share (default `/data` works for the standard mount)
+1. Set `field_profile.browse_root` in `machines.yaml` to point at the mounted
+   DICOM share — in the standard deployment this is `/mnt/va_transfer_ro`
+   (the same share as the WL/CatPhan `dicom_roots`)
 2. Optionally add `analysis_defaults.field_profile` to override the
    centre-wide protocol (defaults to `protocol: VARIAN` + pylinac defaults)
 3. Ensure `templates/field_profile.xltx` exists (always required; run the
    generator if not)
-4. Restart the container if you changed `machines.yaml`
+4. Restart the container: `docker compose restart winston_lutz`
 
 No server-side output is written for Field Profile — the xlsx is served
 in-browser via a download button.
