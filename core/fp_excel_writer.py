@@ -1,19 +1,26 @@
-"""Excel writer — produces paired ``.xltx`` + ``.xlsx`` per Field Profile session.
+"""Excel writer — produces in-memory xlsx bytes for Field Profile downloads.
 
-Implements the ``fp-result-export`` spec:
-- Per-session output folder at
-  ``<output_root>/FP/<MACHINE>_FP_<IMAGE_STEM>/``
-- ``.xltx`` copied verbatim from ``templates/field_profile.xltx``
-- ``.xlsx`` produced by loading the copy, populating 29 metric named cells +
-  ``template_version``, and writing 4 data sheets (Profiles, Penumbra,
-  CAX Beam Center, ROI)
+Implements the ``fp-result-export`` spec (as revised by the
+``generalize-field-profile-browser`` change):
+
+- Loads ``templates/field_profile.xltx`` from disk
+- Populates the 29 metric named cells + ``template_version``
+- Writes 4 data sheets (Profiles, Penumbra, CAX Beam Center, ROI)
+- Saves to an in-memory ``io.BytesIO`` and returns the bytes
+
+**No ``output_root``, no session folder, no machine key, no ``.xltx`` disk
+copy.** The page serves the returned bytes directly to the user's browser via
+``st.download_button``. The 30 named cells (the MyQA contract) are preserved
+inside the downloaded xlsx.
 
 Public API:
-    - :func:`write_fp_session_output`
+    - :func:`build_fp_xlsx_bytes`
+    - :data:`TEMPLATE_VERSION`
 """
 
 from __future__ import annotations
 
+import io
 import logging
 from pathlib import Path
 from typing import Any
@@ -24,7 +31,6 @@ from openpyxl.styles import Font
 from core.config import FP_SUMMARY_NAMES
 from core.excel_helpers import set_named_cell
 from core.result_types import FieldAnalysisResult
-from core.session_io import build_session_folder, copy_template_to_session
 
 logger = logging.getLogger(__name__)
 
@@ -33,67 +39,49 @@ logger = logging.getLogger(__name__)
 TEMPLATE_VERSION = "2026-06-fp"
 
 
-def write_fp_session_output(
-    result: FieldAnalysisResult,
-    output_root: Path,
-    template_path: Path,
-) -> Path:
-    """Write paired ``.xltx`` + ``.xlsx`` for a Field Profile session.
+def build_fp_xlsx_bytes(result: FieldAnalysisResult, template_path: Path) -> bytes:
+    """Build an in-memory xlsx from the template + result, returning bytes.
 
-    Creates the session folder hierarchy if needed, copies the template as
-    ``.xltx``, loads it, populates the 29 metric named cells +
-    ``template_version``, writes 4 data sheets, and saves the ``.xlsx``.
+    Loads the ``.xltx`` template, populates the 29 metric named cells +
+    ``template_version``, writes the 4 data sheets (Profiles, Penumbra, CAX
+    Beam Center, ROI), saves to an in-memory buffer, and returns the bytes.
 
-    The session folder is keyed on the **image stem** (not the runfolder),
-    matching the single-image input model (design D1, D5)::
-
-        <output_root>/FP/<MACHINE>_FP_<IMAGE_STEM>/<MACHINE>_FP_<IMAGE_STEM>.xlsx
+    **No files are written to disk by this function.**
 
     Args:
-        result: The Field Profile analysis result to write.
-        output_root: The machine's output root (``machine.output_root``).
+        result: The Field Profile analysis result.
         template_path: Path to ``templates/field_profile.xltx``.
 
     Returns:
-        The path to the written ``.xlsx`` file.
+        The xlsx workbook as ``bytes`` (suitable for ``st.download_button``).
     """
-    image_stem = Path(result.image_path).stem
-    base_name = f"{result.machine_id}_FP_{image_stem}"
+    # 1. Load the template from disk (read-only — never copied)
+    wb = load_workbook(str(template_path))
 
-    # 1. Build session folder + copy template as .xltx
-    session_dir = build_session_folder(
-        output_root=output_root,
-        machine_id=result.machine_id,
-        module_dir="FP",
-        runfolder_name=image_stem,
-        file_prefix="FP",
-    )
-    xltx_out = copy_template_to_session(template_path, session_dir, base_name)
-    logger.info("Copied Field Profile template to %s", xltx_out)
-
-    # 2. Load the copy, populate named cells + data sheets, save as .xlsx
-    wb = load_workbook(str(xltx_out))
-
-    # Populate the 29 metric named cells from result.summary
+    # 2. Populate the 29 metric named cells from result.summary
     for name in FP_SUMMARY_NAMES:
         value = result.summary.get(name, 0.0)
         set_named_cell(wb, name, value)
 
-    # Populate template_version
+    # 3. Populate template_version
     set_named_cell(wb, "template_version", TEMPLATE_VERSION)
 
-    # 3. Write the 4 data sheets
+    # 4. Write the 4 data sheets
     _write_profiles_sheet(wb, result.vert_profile_values, result.horiz_profile_values)
     _write_penumbra_sheet(wb, result.summary)
     _write_cax_beam_center_sheet(wb, result.summary)
     _write_roi_sheet(wb, result.summary)
 
-    # 4. Save as .xlsx
-    xlsx_out = session_dir / f"{base_name}.xlsx"
-    wb.save(str(xlsx_out))
-    logger.info("Wrote Field Profile session output: %s", xlsx_out)
-
-    return xlsx_out
+    # 5. Save to an in-memory buffer and return the bytes
+    buffer = io.BytesIO()
+    wb.save(buffer)
+    xlsx_bytes = buffer.getvalue()
+    logger.info(
+        "Built Field Profile xlsx bytes for image %s (%d bytes)",
+        Path(result.image_path).name,
+        len(xlsx_bytes),
+    )
+    return xlsx_bytes
 
 
 # ---------------------------------------------------------------------------
@@ -206,5 +194,5 @@ def _write_roi_sheet(wb: Any, summary: dict[str, Any]) -> None:
 
 __all__ = [
     "TEMPLATE_VERSION",
-    "write_fp_session_output",
+    "build_fp_xlsx_bytes",
 ]

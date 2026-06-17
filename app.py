@@ -61,9 +61,9 @@ def main() -> None:
         # CatPhan template is only required if any machine has catphan configured
         if config.has_catphan():
             validate_catphan_template(catphan_template_path)
-        # Field Profile template is only required if any machine has field_profile configured
-        if config.has_field_profile():
-            validate_fp_template(fp_template_path)
+        # Field Profile template is always required — the page is always
+        # available and produces in-memory xlsx from this template.
+        validate_fp_template(fp_template_path)
     except ConfigError as exc:
         st.error(f"**Startup check failed:** {exc}")
         st.info(
@@ -95,12 +95,9 @@ def main() -> None:
         st.write("• **CatPhan 504** — available (see the CatPhan page in the sidebar)")
     else:
         st.write("• CatPhan — *not configured (add ``catphan:`` to machines.yaml to enable)*")
-    if config.has_field_profile():
-        st.write("• **Field Profile** — available (see the Field Profile page in the sidebar)")
-    else:
-        st.write(
-            "• Field Profile — *not configured (add ``field_profile:`` to machines.yaml to enable)*"
-        )
+    st.write(
+        "• **Field Profile** — available (general-purpose; see the Field Profile page in the sidebar)"
+    )
     st.write("• Trajectory Log — *coming soon*")
 
     # Cache config + template path in session_state for pages

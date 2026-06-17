@@ -10,6 +10,7 @@ Public API:
     - :class:`WLDefaults`
     - :class:`CatPhanDefaults`
     - :class:`FieldProfileDefaults`
+    - :class:`FieldProfilePageConfig`
     - :class:`AssetsConfig`
     - :class:`AppConfig`
     - :func:`load_config`
@@ -182,7 +183,11 @@ FP_SUMMARY_NAMES: tuple[str, ...] = (
 REQUIRED_FP_TEMPLATE_NAMES: tuple[str, ...] = (*FP_SUMMARY_NAMES, "template_version")
 
 #: Module keys the app currently knows about (for validation).
-_KNOWN_MODULE_KEYS: set[str] = {"winston_lutz", "catphan", "field_profile"}
+#: Note: ``field_profile`` is intentionally NOT listed here — it has been
+#: decoupled from per-machine ``dicom_roots`` (see ``generalize-field-profile-browser``
+#: change). A legacy ``dicom_roots.field_profile`` key is silently ignored
+#: (forward-compat, same treatment as ``trajectory_log``).
+_KNOWN_MODULE_KEYS: set[str] = {"winston_lutz", "catphan"}
 
 
 # ---------------------------------------------------------------------------
@@ -207,8 +212,8 @@ class MachineConfig(BaseModel):
 
     ``dicom_roots`` is a multi-module dict where ``winston_lutz`` and
     ``catphan`` are each independently optional. At least one module root must
-    be present per machine. Unknown keys (e.g. ``field_profile``) pass through
-    silently for forward compatibility.
+    be present per machine. Unknown keys (e.g. legacy ``field_profile`` or
+    future ``trajectory_log``) pass through silently for forward compatibility.
 
     ``output_root`` is the per-machine output directory where WL/CatPhan
     session folders are written as subdirectories.
@@ -336,6 +341,22 @@ class FieldProfileDefaults(BaseModel):
         return v
 
 
+class FieldProfilePageConfig(BaseModel):
+    """Top-level Field Profile page configuration.
+
+    The Field Profile page is decoupled from per-machine config (see
+    ``generalize-field-profile-browser`` change). This optional top-level
+    section configures the standalone page — currently just the folder
+    browser root.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    #: Root of the cascading folder browser. Defaults to ``/data`` (the
+    #: standard container DICOM mount).
+    browse_root: str = "/data"
+
+
 class AppConfig(BaseModel):
     """Top-level application configuration (the parsed ``machines.yaml``)."""
 
@@ -347,6 +368,9 @@ class AppConfig(BaseModel):
         description="Keyed by module name; validated conditionally against configured modules.",
     )
     assets: AssetsConfig
+    #: Optional top-level Field Profile page config (decoupled from machines).
+    #: If absent, defaults to ``browse_root="/data"``.
+    field_profile: FieldProfilePageConfig = Field(default_factory=FieldProfilePageConfig)
 
     @model_validator(mode="after")
     def _validate_module_defaults(self) -> AppConfig:
@@ -354,6 +378,11 @@ class AppConfig(BaseModel):
 
         - If any machine has ``winston_lutz``, ``analysis_defaults.winston_lutz`` must be present.
         - If any machine has ``catphan``, ``analysis_defaults.catphan`` must be present.
+
+        Note: ``field_profile`` is intentionally NOT validated against machines
+        here — it has been decoupled from per-machine config (see
+        ``generalize-field-profile-browser`` change). ``analysis_defaults.field_profile``
+        is optional centre-wide config, validated by ``_validate_fp_defaults_if_present``.
         """
         configured_modules: set[str] = set()
         for machine in self.machines.values():
@@ -377,15 +406,19 @@ class AppConfig(BaseModel):
                 )
             CatPhanDefaults(**cp_section)  # validate the sub-section
 
-        if "field_profile" in configured_modules:
-            fp_section = self.analysis_defaults.get("field_profile")
-            if fp_section is None:
-                raise ValueError(
-                    "field_profile module configured for machine(s) but "
-                    "analysis_defaults.field_profile is missing"
-                )
-            FieldProfileDefaults(**fp_section)  # validate the sub-section
+        return self
 
+    @model_validator(mode="after")
+    def _validate_fp_defaults_if_present(self) -> AppConfig:
+        """Validate ``analysis_defaults.field_profile`` if present.
+
+        ``analysis_defaults.field_profile`` is now **optional** centre-wide
+        config. If present, it must parse as :class:`FieldProfileDefaults`.
+        If absent, the FP page uses ``protocol: VARIAN`` + pylinac defaults.
+        """
+        fp_section = self.analysis_defaults.get("field_profile")
+        if fp_section is not None:
+            FieldProfileDefaults(**fp_section)  # validate the sub-section
         return self
 
     @property
@@ -400,8 +433,36 @@ class AppConfig(BaseModel):
 
     @property
     def fp_defaults(self) -> FieldProfileDefaults:
-        """Convenience accessor for the centre-wide Field Profile defaults."""
+        """Convenience accessor for the centre-wide Field Profile defaults.
+
+        .. deprecated::
+            Use :attr:`fp_defaults_or_none` instead. This accessor raises
+            ``KeyError`` if ``analysis_defaults.field_profile`` is absent
+            (which is now a valid configuration — the FP page falls back to
+            ``protocol: VARIAN`` + pylinac defaults). Kept for backwards
+            compatibility with any external callers.
+        """
         return FieldProfileDefaults(**self.analysis_defaults["field_profile"])
+
+    @property
+    def fp_defaults_or_none(self) -> FieldProfileDefaults | None:
+        """Return the centre-wide Field Profile defaults, or ``None`` if absent.
+
+        The FP page uses this accessor and falls back to ``protocol: VARIAN``
+        + pylinac defaults when it returns ``None``.
+        """
+        fp_section = self.analysis_defaults.get("field_profile")
+        if fp_section is None:
+            return None
+        return FieldProfileDefaults(**fp_section)
+
+    @property
+    def fp_browse_root(self) -> str:
+        """Root path for the Field Profile cascading folder browser.
+
+        Defaults to ``/data`` (the standard container DICOM mount).
+        """
+        return self.field_profile.browse_root
 
     def has_catphan(self) -> bool:
         """Return True if any machine has ``catphan`` configured."""
@@ -412,8 +473,14 @@ class AppConfig(BaseModel):
         return any("winston_lutz" in m.dicom_roots for m in self.machines.values())
 
     def has_field_profile(self) -> bool:
-        """Return True if any machine has ``field_profile`` configured."""
-        return any("field_profile" in m.dicom_roots for m in self.machines.values())
+        """Return True if the Field Profile page is available.
+
+        The FP page is now always available (decoupled from per-machine
+        config — see ``generalize-field-profile-browser`` change). This
+        method always returns ``True`` and is kept for app.py home-page
+        display logic compatibility.
+        """
+        return True
 
     def machine_keys_for_module(self, module_key: str) -> list[str]:
         """Return sorted machine keys that have ``module_key`` configured.
@@ -616,6 +683,7 @@ __all__ = [
     "CatPhanDefaults",
     "ConfigError",
     "FieldProfileDefaults",
+    "FieldProfilePageConfig",
     "MachineConfig",
     "MachineScale",
     "WLDefaults",

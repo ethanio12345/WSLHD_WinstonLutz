@@ -12,7 +12,12 @@ template.
   Advanced mode with detection overlays and Plotly charts
 - **CatPhan 504** (`pages/2_CatPhan.py`) — one-click CBCT analysis, 5-tab
   Advanced mode with per-CTP-module drill-down (CTP404/486/528/515)
-- *Coming soon:* Field Profile, Trajectory Log
+- **Field Profile** (`pages/3_Field_Profile.py`) — general-purpose
+  flatness/symmetry tool (decoupled from per-machine config). Navigate to any
+  RT image folder via a cascading browser, analyse one image, and download
+  the MyQA-ready xlsx in-browser. 4-tab Advanced mode (Overview, Profiles,
+  Field Map, ROI & Penumbra) with FFF auto-detection from DICOM metadata
+- *Coming soon:* Trajectory Log
 
 ## Quickstart
 
@@ -59,12 +64,19 @@ sections:
 
 - **`machines`**: one entry per linac, each with `display_name`,
   `dicom_roots` (paths to DICOM directories — `winston_lutz` and/or `catphan`),
-  and `output_root` (per-machine output directory)
+  and `output_root` (per-machine output directory for WL/CatPhan; Field
+  Profile serves downloads in-browser)
+- **`field_profile`** (optional, top-level): configures the Field Profile
+  page's cascading folder browser root (`browse_root`, default `/data`). The
+  FP page is a general-purpose standalone tool — no per-machine config needed.
 - **`analysis_defaults.winston_lutz`**: centre-wide WL pylinac parameters
   (`bb_size_mm`, `machine_scale`, `tolerance_mm`, and optional params)
 - **`analysis_defaults.catphan`**: centre-wide CatPhan pylinac parameters
   (`hu_tolerance`, `scaling_tolerance`, `slice_thickness_tolerance`, and optional
   params) — required if any machine has `catphan` configured
+- **`analysis_defaults.field_profile`** (optional): centre-wide Field Profile
+  pylinac parameters (`protocol`, and optional params). If absent, the page
+  uses `protocol: VARIAN` + pylinac defaults
 - **`assets`**: paths to the Fry meme and logo
 
 ## Updating the Fry meme
@@ -114,7 +126,8 @@ WSLHD_WinstonLutz/
     cbct_runner.py            ← pylinac CatPhan504 wrapper
     excel_writer.py           ← WL xltx copy + named-cell writer
     cbct_excel_writer.py      ← CatPhan xltx copy + per-CTP-module sheets
-    result_types.py           ← WLAnalysisResult + CatPhanAnalysisResult dataclasses
+    fp_excel_writer.py        ← Field Profile in-memory xlsx bytes (browser download)
+    result_types.py           ← WL/CatPhan/FieldAnalysis result dataclasses
     runfolder.py              ← shared runfolder discovery utilities
     session_io.py             ← shared session output folder builder
     excel_helpers.py          ← shared set_named_cell + sanitise_sheet_name

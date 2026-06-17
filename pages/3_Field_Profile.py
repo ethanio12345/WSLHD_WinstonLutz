@@ -1,15 +1,16 @@
 """Field Profile QA page — renders Simple or Advanced mode per sidebar toggle.
 
 Implements:
-    - fp-simple-mode spec (Simple mode: machine/runfolder/image dropdowns,
+    - fp-simple-mode spec (Simple mode: cascading folder browser, image dropdown,
       one-click analysis, FFF auto-detection, success card, hand-off)
     - fp-advanced-mode spec (Advanced mode: sidebar params + FFF override,
       4 tabs (Overview, Profiles, Field Map, ROI & Penumbra), re-run, download,
       lazy fp_obj, full inline errors)
 
-Mirrors the structure of ``pages/2_CatPhan.py`` but adapted for the
-single-image input model (design D1): Field Analysis operates on one DICOM,
-so the page adds an image dropdown after the runfolder dropdown.
+The page is a **general-purpose standalone tool** (decoupled from per-machine
+config — see ``generalize-field-profile-browser`` change). The physicist
+navigates to any RT image folder via a cascading selectbox browser rooted at
+``config.fp_browse_root`` (default ``/data``).
 """
 
 from __future__ import annotations
@@ -26,21 +27,27 @@ from core.caching import (
     set_cached_obj,
     set_cached_result,
 )
-from core.config import AppConfig
-from core.fp_excel_writer import write_fp_session_output
+from core.config import AppConfig, FieldProfileDefaults
+from core.fp_excel_writer import build_fp_xlsx_bytes
 from core.fp_runner import (
     extract_dicom_info,
     load_fp_object,
     run_fp_analysis,
 )
 from core.result_types import FieldAnalysisResult
-from core.runfolder import list_runfolders
 from core.ui_utils import render_mode_toggle
 
 logger = logging.getLogger(__name__)
 
 #: Session-state prefix for this module.
 _PREFIX = "fp"
+
+#: Session-state key for the cascading folder browser path (list of components).
+_BROWSER_PATH_KEY = "fp_browser_path"
+
+#: Default FieldProfileDefaults used when ``analysis_defaults.field_profile``
+#: is absent (decoupled page falls back to protocol: VARIAN + pylinac defaults).
+_DEFAULT_FP_DEFAULTS = FieldProfileDefaults(protocol="VARIAN")
 
 
 def render(config: AppConfig, template_path: Path) -> None:
@@ -69,17 +76,28 @@ def run_fp_analysis_cached(**kwargs):  # type: ignore[no-untyped-def]
 
 
 # ---------------------------------------------------------------------------
-# Helpers — image discovery (single-image input model, design D1)
+# Helpers — cascading folder browser (design D1)
 # ---------------------------------------------------------------------------
 
 
-def _list_dicom_images(runfolder: Path) -> list[Path]:
-    """List DICOM files in ``runfolder``, sorted by name."""
-    if not runfolder.exists():
+def _list_subdirs(folder: Path) -> list[Path]:
+    """Return immediate subdirectories of ``folder``, sorted by name.
+
+    Files are never listed. Returns an empty list if ``folder`` does not
+    exist or contains no subdirectories.
+    """
+    if not folder.exists() or not folder.is_dir():
+        return []
+    return sorted((p for p in folder.iterdir() if p.is_dir()), key=lambda p: p.name)
+
+
+def _list_dicom_images(folder: Path) -> list[Path]:
+    """List DICOM files in ``folder``, sorted by name."""
+    if not folder.exists():
         return []
     images: list[Path] = []
     for pattern in ("*.dcm", "*.dicom", "*.DCM"):
-        images.extend(runfolder.glob(pattern))
+        images.extend(folder.glob(pattern))
     return sorted(set(images), key=lambda p: p.name)
 
 
@@ -102,53 +120,157 @@ def _build_image_label(image_path: Path) -> tuple[str, dict]:
         }
 
 
+def _resolve_browse_root(browse_root_str: str) -> Path | None:
+    """Resolve the configured browse_root, returning None + showing a message if invalid.
+
+    Handles empty/non-existent browse_root with an inline info message (no crash),
+    per spec scenario "browse_root missing or empty".
+    """
+    browse_root = Path(browse_root_str)
+    if not browse_root.exists():
+        st.info(
+            f"Field Profile browse root `{browse_root_str}` does not exist. "
+            "Set `field_profile.browse_root` in machines.yaml to a mounted DICOM share."
+        )
+        return None
+    if not browse_root.is_dir():
+        st.info(f"Field Profile browse root `{browse_root_str}` is not a directory.")
+        return None
+    return browse_root
+
+
+def render_folder_browser(browse_root: Path) -> Path | None:
+    """Render cascading selectboxes for navigating folders under ``browse_root``.
+
+    Sandboxed to ``browse_root`` — there is no affordance to navigate above it
+    (no ``..``, no absolute-path entry). Each selectbox lists immediate
+    subdirectories (sorted by name); files are never listed. Changing a
+    higher-level selectbox truncates the deeper levels (re-branches).
+
+    Persists the selected path components in ``st.session_state["fp_browser_path"]``
+    and returns the currently-selected folder (the deepest selected folder,
+    which may be ``browse_root`` itself if no subdirs have been chosen).
+
+    Args:
+        browse_root: The root directory the browser is sandboxed to.
+
+    Returns:
+        The currently-selected folder path, or ``None`` if ``browse_root``
+        is empty (contains no subdirectories and no DICOMs).
+    """
+    # Recover the persisted path components (list of subdir names under browse_root)
+    components: list[str] = list(st.session_state.get(_BROWSER_PATH_KEY, []))
+
+    # Filter out persisted components that no longer exist on disk
+    valid_components: list[str] = []
+    current = browse_root
+    for comp in components:
+        candidate = current / comp
+        if candidate.exists() and candidate.is_dir():
+            valid_components.append(comp)
+            current = candidate
+        else:
+            break  # a parent was removed/renamed; truncate here
+    components = valid_components
+    st.session_state[_BROWSER_PATH_KEY] = components
+
+    # Render cascading selectboxes level-by-level
+    current_folder = browse_root
+    level = 0
+    while True:
+        subdirs = _list_subdirs(current_folder)
+        if not subdirs:
+            break  # no deeper level to render
+
+        options = ["(none)"] + [p.name for p in subdirs]
+        # Pre-select the persisted component for this level, if any
+        current_selection = components[level] if level < len(components) else "(none)"
+        try:
+            index = options.index(current_selection)
+        except ValueError:
+            index = 0  # "(none)"
+
+        selected = st.sidebar.selectbox(
+            f"Folder (level {level + 1})" if level > 0 else "Folder",
+            options=options,
+            index=index,
+            key=f"{_PREFIX}_browser_level_{level}",
+        )
+
+        if selected == "(none)":
+            # Truncate any deeper persisted components
+            if level < len(components):
+                components = components[:level]
+                st.session_state[_BROWSER_PATH_KEY] = components
+            break
+
+        # Persist / update the component at this level
+        if level < len(components):
+            if components[level] != selected:
+                # Re-branch: truncate deeper levels
+                components = [*components[:level], selected]
+                st.session_state[_BROWSER_PATH_KEY] = components
+        else:
+            components.append(selected)
+            st.session_state[_BROWSER_PATH_KEY] = components
+
+        current_folder = current_folder / selected
+        level += 1
+
+    return current_folder
+
+
+# ---------------------------------------------------------------------------
+# Shared FP defaults accessor (page uses the optional accessor)
+# ---------------------------------------------------------------------------
+
+
+def _get_fp_defaults(config: AppConfig) -> FieldProfileDefaults:
+    """Return the centre-wide FP defaults, or the VARIAN default if absent."""
+    return config.fp_defaults_or_none or _DEFAULT_FP_DEFAULTS
+
+
 # ---------------------------------------------------------------------------
 # Simple mode
 # ---------------------------------------------------------------------------
 
 
 def _render_simple(config: AppConfig, template_path: Path) -> None:
-    """Simple mode: machine → runfolder → image → one-click analysis."""
+    """Simple mode: folder browser → image → one-click analysis."""
     st.header("Field Profile — Simple Mode")
 
-    # 5.1 Machine dropdown (filtered to field_profile-configured machines)
-    machine_key = _render_machine_dropdown(config)
-    if machine_key is None:
-        return  # empty-state warning already shown
-
-    machine = config.machines[machine_key]
-    dicom_root = Path(machine.dicom_roots["field_profile"])
-
-    # 5.2 Runfolder dropdown (newest-first, auto-select newest)
-    runfolder = _render_runfolder_dropdown(dicom_root)
-    if runfolder is None:
+    # Cascading folder browser (rooted at config.fp_browse_root)
+    browse_root = _resolve_browse_root(config.fp_browse_root)
+    if browse_root is None:
         return
 
-    # 5.3 Image dropdown with DICOM metadata display
-    image_path, dicom_info = _render_image_dropdown(runfolder)
+    folder = render_folder_browser(browse_root)
+
+    # Image dropdown with DICOM metadata display
+    image_path, dicom_info = _render_image_dropdown(folder)
     if image_path is None:
         return
 
-    # 5.4 FFF detection display
+    # FFF detection display
     is_fff = bool(dicom_info.get("is_fff", False))
     st.info(f"**FFF detected:** {'Yes' if is_fff else 'No'}")
 
-    # 5.5 One-click analysis button
+    # One-click analysis button
     if st.button("Shut Up and Give Me My MyQA Results", type="primary"):
         _run_simple_analysis(
             config=config,
             template_path=template_path,
-            machine_key=machine_key,
+            folder=folder,
             image_path=image_path,
             image_display_name=dicom_info["display_string"],
         )
 
     # If we have a cached result from a previous run this session, show the card
     cached = get_cached_result(_PREFIX)
-    if cached is not None and st.session_state.get(f"{_PREFIX}_machine") == machine_key:
+    if cached is not None:
         _render_success_card(
             result=cached,
-            xlsx_path=st.session_state.get(f"{_PREFIX}_xlsx_path"),
+            template_path=template_path,
         )
 
 
@@ -156,17 +278,23 @@ def _run_simple_analysis(
     *,
     config: AppConfig,
     template_path: Path,
-    machine_key: str,
+    folder: Path,
     image_path: Path,
     image_display_name: str,
 ) -> None:
-    """Execute Simple-mode analysis with error wrapping (5.5)."""
-    fp_defaults = config.fp_defaults
-    machine = config.machines[machine_key]
+    """Execute Simple-mode analysis with error wrapping (5.5).
+
+    No server-side file write — the result is shown in-browser and the xlsx
+    is served via ``st.download_button`` in the success card.
+    """
+    fp_defaults = _get_fp_defaults(config)
+    # Use the deepest folder name as the session identifier (decoupled from
+    # machine config). This populates the ``machine_name`` MyQA metadata cell.
+    session_id = folder.name or "field_profile"
     try:
         with st.spinner("Running Field Profile analysis..."):
             result = run_fp_analysis_cached(
-                machine_id=machine_key,
+                machine_id=session_id,
                 image_path=str(image_path),
                 image_display_name=image_display_name,
                 protocol=fp_defaults.protocol,
@@ -184,15 +312,8 @@ def _run_simple_analysis(
                 edge_smoothing_ratio=fp_defaults.edge_smoothing_ratio,
                 hill_window_ratio=fp_defaults.hill_window_ratio,
             )
-            xlsx_path = write_fp_session_output(
-                result=result,
-                output_root=Path(machine.output_root),
-                template_path=template_path,
-            )
         # Store in session state for success card + hand-off
         set_cached_result(_PREFIX, result)
-        st.session_state[f"{_PREFIX}_xlsx_path"] = str(xlsx_path)
-        st.session_state[f"{_PREFIX}_machine"] = machine_key
         st.rerun()
 
     except Exception:
@@ -201,47 +322,19 @@ def _run_simple_analysis(
         st.error(f"Analysis failed: {summary}. Switch to Advanced mode to debug.")
 
 
-def _render_machine_dropdown(config: AppConfig) -> str | None:
-    """5.1 Sidebar machine dropdown — filtered to field_profile machines."""
-    machine_keys = config.machine_keys_for_module("field_profile")
-    if not machine_keys:
-        st.warning("No machines have Field Profile configured. Edit machines.yaml and reload.")
-        return None
-
-    options = {k: config.machines[k].display_name for k in machine_keys}
-    selected = st.sidebar.selectbox(
-        "Machine",
-        options=machine_keys,
-        format_func=lambda k: options[k],
-    )
-    return selected
-
-
-def _render_runfolder_dropdown(dicom_root: Path) -> Path | None:
-    """5.2 Runfolder dropdown — newest-first, auto-select newest."""
-    runfolders = list_runfolders(dicom_root)
-    if not runfolders:
-        st.error(f"No runfolders found for field_profile root {dicom_root}. Contact physics IT.")
-        return None
-
-    folder_labels = [p.name for p in runfolders]
-    selected_label = st.sidebar.selectbox(
-        "Runfolder",
-        options=folder_labels,
-        index=0,  # newest-first → auto-select newest
-        key=f"{_PREFIX}_runfolder_select",
-    )
-    return runfolders[folder_labels.index(selected_label)]
-
-
-def _render_image_dropdown(runfolder: Path) -> tuple[Path | None, dict]:
-    """5.3 Image dropdown — list DICOMs with metadata display.
+def _render_image_dropdown(folder: Path) -> tuple[Path | None, dict]:
+    """Image dropdown — list DICOMs in the selected folder with metadata display.
 
     Returns (selected_image_path, dicom_info_dict) or (None, {}) if no images.
+    Handles empty selected folder with an inline info message (no crash),
+    per spec scenario "browse_root missing or empty".
     """
-    images = _list_dicom_images(runfolder)
+    images = _list_dicom_images(folder)
     if not images:
-        st.error(f"No DICOM images found in runfolder `{runfolder.name}`.")
+        st.info(
+            f"No DICOM images (``.dcm``/``.dicom``) found in `{folder}`. "
+            "Navigate to a folder containing RT portal images."
+        )
         return None, {}
 
     # Build labels (cached-friendly: rebuild each render is fine for tens of images)
@@ -265,13 +358,14 @@ def _render_image_dropdown(runfolder: Path) -> tuple[Path | None, dict]:
 def _render_success_card(
     *,
     result: FieldAnalysisResult,
-    xlsx_path: str | None,
+    template_path: Path,
 ) -> None:
-    """5.6 Success card with key metrics + hand-off button."""
-    st.success("Analysis complete!")
+    """Success card with key metrics + download button + hand-off button.
 
-    if xlsx_path:
-        st.write(f"**Output:** `{xlsx_path}`")
+    No server-side output path is shown (there is none). The xlsx is served
+    in-browser via ``st.download_button``.
+    """
+    st.success("Analysis complete!")
 
     s = result.summary
     st.write(f"**Flatness Vertical (%):** {s.get('flatness_vertical', '?')}")
@@ -281,6 +375,21 @@ def _render_success_card(
     st.write(f"**Field Size Vertical (mm):** {s.get('field_size_vertical_mm', '?')}")
     st.write(f"**Field Size Horizontal (mm):** {s.get('field_size_horizontal_mm', '?')}")
     st.write(f"**FFF status:** {'Yes' if result.is_fff else 'No'}")
+
+    # In-browser xlsx download (no server write). The file_name keys on the
+    # image stem per fp-result-export spec.
+    image_stem = Path(result.image_path).stem
+    try:
+        xlsx_bytes = build_fp_xlsx_bytes(result=result, template_path=template_path)
+        st.download_button(
+            label="Download xlsx",
+            data=xlsx_bytes,
+            file_name=f"{image_stem}.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+    except Exception:
+        logging.exception("Failed to build Field Profile xlsx bytes for download")
+        st.warning("Could not build the xlsx download. See the logs for details.")
 
     # Hand-off to Advanced mode
     if st.button("View in Advanced mode"):
@@ -305,8 +414,6 @@ def _safe_error_message() -> str:
             "could not detect the field edges. Check image quality/positioning "
             "or switch to Advanced mode."
         )
-    if "write" in msg.lower() or "permission" in msg.lower():
-        return "cannot write to the output directory. Contact physics IT."
     return f"{type_name}: {msg[:80]}"
 
 
@@ -319,18 +426,17 @@ def _render_advanced(config: AppConfig, template_path: Path) -> None:
     """Advanced mode: sidebar params + FFF override + 4 tabs."""
     st.header("Field Profile — Advanced Mode")
 
-    # 6.6 Hand-off reception: if fp_result is set, use it; don't re-run
+    # Hand-off reception: if fp_result is set, use it; don't re-run
     result: FieldAnalysisResult | None = get_cached_result(_PREFIX)
-    machine_key = st.session_state.get(f"{_PREFIX}_machine")
 
-    if result is None or machine_key is None:
+    if result is None:
         # No hand-off — need to run analysis first via sidebar
         st.info("No analysis result yet. Run analysis from the sidebar.")
-        machine_key, result = _advanced_initial_run(config, template_path)
+        result = _advanced_initial_run(config, template_path)
         if result is None:
             return
 
-    # 6.1 Advanced sidebar with params + FFF override
+    # Advanced sidebar with params + FFF override
     params = _render_advanced_sidebar(
         config=config,
         result=result,
@@ -342,18 +448,17 @@ def _render_advanced(config: AppConfig, template_path: Path) -> None:
     download_clicked = col2.button("Download xlsx")
 
     if rerun_clicked:
-        result = _handle_rerun(
+        new_result = _handle_rerun(
             config=config,
-            template_path=template_path,
-            machine_key=machine_key,
             params=params,
             prev_result=result,
         )
+        if new_result is not None:
+            result = new_result
 
     if download_clicked:
         _handle_download(
             result=result,
-            config=config,
             template_path=template_path,
         )
 
@@ -372,35 +477,30 @@ def _render_advanced(config: AppConfig, template_path: Path) -> None:
         _render_roi_tab(result)
 
 
-def _advanced_initial_run(
-    config: AppConfig, template_path: Path
-) -> tuple[str | None, FieldAnalysisResult | None]:
+def _advanced_initial_run(config: AppConfig, template_path: Path) -> FieldAnalysisResult | None:
     """Run an initial analysis from the sidebar if no hand-off result exists."""
-    machine_key = _render_machine_dropdown(config)
-    if machine_key is None:
-        return None, None
+    browse_root = _resolve_browse_root(config.fp_browse_root)
+    if browse_root is None:
+        return None
 
-    machine = config.machines[machine_key]
-    fp_defaults = config.fp_defaults
-    dicom_root = Path(machine.dicom_roots["field_profile"])
+    folder = render_folder_browser(browse_root)
 
-    runfolder = _render_runfolder_dropdown(dicom_root)
-    if runfolder is None:
-        return machine_key, None
-
-    image_path, dicom_info = _render_image_dropdown(runfolder)
+    image_path, dicom_info = _render_image_dropdown(folder)
     if image_path is None:
-        return machine_key, None
+        return None
 
     st.info(
         f"**FFF detected:** {'Yes' if dicom_info.get('is_fff') else 'No'} — will analyse: `{image_path.name}`"
     )
 
+    fp_defaults = _get_fp_defaults(config)
+    session_id = folder.name or "field_profile"
+
     if st.sidebar.button("Run analysis", type="primary"):
         try:
             with st.spinner("Running Field Profile analysis..."):
                 result = run_fp_analysis_cached(
-                    machine_id=machine_key,
+                    machine_id=session_id,
                     image_path=str(image_path),
                     image_display_name=dicom_info["display_string"],
                     protocol=fp_defaults.protocol,
@@ -419,22 +519,21 @@ def _advanced_initial_run(
                     hill_window_ratio=fp_defaults.hill_window_ratio,
                 )
             set_cached_result(_PREFIX, result)
-            st.session_state[f"{_PREFIX}_machine"] = machine_key
             st.rerun()
         except Exception:
             logging.exception("Field Profile analysis failed in Advanced mode")
-            # 6.9 Full errors surfaced inline in Advanced mode
+            # Full errors surfaced inline in Advanced mode
             import traceback
 
             st.error("Analysis failed. Full traceback:")
             st.code(traceback.format_exc())
 
-    return machine_key, None
+    return None
 
 
 def _render_advanced_sidebar(config: AppConfig, result: FieldAnalysisResult) -> dict:
-    """6.1 Render sidebar with all scalar analyze params + FFF override."""
-    fp_defaults = config.fp_defaults
+    """Render sidebar with all scalar analyze params + FFF override."""
+    fp_defaults = _get_fp_defaults(config)
     base_params = result.params_used if result else {}
 
     st.sidebar.markdown("---")
@@ -542,7 +641,7 @@ def _render_advanced_sidebar(config: AppConfig, result: FieldAnalysisResult) -> 
         step=0.05,
     )
 
-    # 6.1 FFF override checkbox (pre-checked from detected value)
+    # FFF override checkbox (pre-checked from detected value)
     detected_fff = bool(base_params.get("is_FFF", False))
     params["is_FFF"] = st.sidebar.checkbox(
         "Force FFF analysis",
@@ -559,19 +658,20 @@ def _render_advanced_sidebar(config: AppConfig, result: FieldAnalysisResult) -> 
 def _handle_rerun(
     *,
     config: AppConfig,
-    template_path: Path,
-    machine_key: str,
     params: dict,
     prev_result: FieldAnalysisResult,
 ) -> FieldAnalysisResult | None:
-    """6.7 Re-run handler — invalidates fp_obj, calls cached run with new params."""
-    # 6.10 Lazy fp_obj invalidation on re-run
+    """Re-run handler — invalidates fp_obj, calls cached run with new params."""
+    # Lazy fp_obj invalidation on re-run
     invalidate(_PREFIX, suffixes=("obj",))
+
+    # Use the previous session id (preserves the machine_name MyQA cell)
+    session_id = prev_result.machine_id
 
     try:
         with st.spinner("Running Field Profile analysis..."):
             result = run_fp_analysis_cached(
-                machine_id=machine_key,
+                machine_id=session_id,
                 image_path=prev_result.image_path,
                 image_display_name=prev_result.image_display_name,
                 protocol=params["protocol"],
@@ -591,12 +691,12 @@ def _handle_rerun(
             )
     except Exception:
         logging.exception("Field Profile re-run failed in Advanced mode")
-        # 6.9 Full errors surfaced inline
+        # Full errors surfaced inline
         import traceback
 
         st.error("Analysis failed. Full traceback:")
         st.code(traceback.format_exc())
-        return prev_result
+        return None
 
     # Detect cache short-circuit
     if result == prev_result:
@@ -609,24 +709,25 @@ def _handle_rerun(
 def _handle_download(
     *,
     result: FieldAnalysisResult,
-    config: AppConfig,
     template_path: Path,
 ) -> None:
-    """6.8 Download handler — write xlsx, show download button."""
-    machine = config.machines.get(result.machine_id)
-    output_root = machine.output_root if machine else "/tmp"
-    xlsx_path = write_fp_session_output(
-        result=result,
-        output_root=Path(output_root),
-        template_path=template_path,
+    """Download handler — build xlsx bytes, render ``st.download_button``.
+
+    No server-side write. The browser writes the xlsx to the user's Downloads.
+    """
+    image_stem = Path(result.image_path).stem
+    try:
+        xlsx_bytes = build_fp_xlsx_bytes(result=result, template_path=template_path)
+    except Exception:
+        logging.exception("Failed to build Field Profile xlsx bytes for download")
+        st.error("Could not build the xlsx download. See the logs for details.")
+        return
+    st.download_button(
+        label="Download xlsx",
+        data=xlsx_bytes,
+        file_name=f"{image_stem}.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     )
-    with open(xlsx_path, "rb") as f:
-        st.download_button(
-            label="Download xlsx",
-            data=f.read(),
-            file_name=Path(xlsx_path).name,
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        )
 
 
 # ---------------------------------------------------------------------------
@@ -635,7 +736,7 @@ def _handle_download(
 
 
 def _get_fp_obj(result: FieldAnalysisResult):  # type: ignore[no-untyped-def]
-    """6.10 Lazily initialise the pylinac FieldAnalysis object in session_state."""
+    """Lazily initialise the pylinac FieldAnalysis object in session_state."""
     obj = get_cached_obj(_PREFIX)
     if obj is None:
         try:
@@ -649,7 +750,7 @@ def _get_fp_obj(result: FieldAnalysisResult):  # type: ignore[no-untyped-def]
 
 
 def _render_overview_tab(result: FieldAnalysisResult) -> None:
-    """6.2 Overview tab — summary table (29 metrics), protocol, FFF status."""
+    """Overview tab — summary table (29 metrics), protocol, FFF status."""
     import pandas as pd
 
     # Session + protocol + FFF status line
@@ -677,7 +778,7 @@ def _render_overview_tab(result: FieldAnalysisResult) -> None:
 
 
 def _render_profiles_tab(result: FieldAnalysisResult) -> None:
-    """6.3 Profiles tab — Plotly V+H profile line charts (downsampled ~500 pts)."""
+    """Profiles tab — Plotly V+H profile line charts (downsampled ~500 pts)."""
     import plotly.graph_objects as go
 
     vert = result.vert_profile_values
@@ -715,7 +816,7 @@ def _render_profiles_tab(result: FieldAnalysisResult) -> None:
 
 
 def _render_field_map_tab(result: FieldAnalysisResult) -> None:
-    """6.4 Field Map tab — fa.plot_analyzed_image() rendered as matplotlib figure."""
+    """Field Map tab — fa.plot_analyzed_image() rendered as matplotlib figure."""
     import matplotlib.pyplot as plt
 
     fp_obj = _get_fp_obj(result)
@@ -736,7 +837,7 @@ def _render_field_map_tab(result: FieldAnalysisResult) -> None:
 
 
 def _render_roi_tab(result: FieldAnalysisResult) -> None:
-    """6.5 ROI & Penumbra tab — central ROI stats + penumbra table + slopes."""
+    """ROI & Penumbra tab — central ROI stats + penumbra table + slopes."""
     import pandas as pd
 
     s = result.summary

@@ -8,6 +8,7 @@ schema. This document describes every field.
 ```yaml
 machines:             # map of machine key → machine config (required)
 analysis_defaults:    # centre-wide analysis defaults (required)
+field_profile:        # Field Profile page config (optional; page is always available)
 assets:               # asset paths (required)
 ```
 
@@ -26,8 +27,12 @@ requires:
 
 `winston_lutz` and `catphan` are each independently optional per machine — a
 machine may have either, both, or (when future modules ship) neither. At least
-one module root must be configured per machine. Unknown keys (e.g.
-`field_profile`) pass through silently for forward compatibility.
+one module root must be configured per machine.
+
+> **Note:** `field_profile` is **not** a per-machine `dicom_roots` key (the
+> Field Profile page is decoupled from machines — see
+> [`field_profile`](#field_profile-optional) below). A legacy
+> `dicom_roots.field_profile` entry is silently ignored (forward-compat).
 
 ### One machine (WL + CatPhan)
 
@@ -79,6 +84,31 @@ global setting, so each machine can write to its own network share.
 The app creates `<output_root>/<MODULE>/<MACHINE>_<PREFIX>_<RUNFOLDER>/` per session.
 e.g. `/mnt/va_transfer_physics_qa/05 LA2/Pylinac/WL/LA2_WL_demo_clinical/`
      `/mnt/va_transfer_physics_qa/05 LA2/Pylinac/CatPhan/LA2_CP_2026-06-16_monthly/`
+
+> **Note:** Field Profile does **not** write to `output_root`. The FP page is
+> decoupled from per-machine output and serves results in-browser via a
+> download button (see [`field_profile`](#field_profile-optional) below).
+
+## `field_profile` (optional)
+
+The Field Profile page is a **general-purpose standalone tool** decoupled from
+per-machine config. It is always available; this optional top-level section
+configures the cascading folder browser.
+
+| Field | Type | Required | Default | Description |
+|-------|------|----------|---------|-------------|
+| `field_profile.browse_root` | str (path) | no | `/data` | Root of the cascading folder browser |
+
+The physicist navigates to any RT image folder by drilling down through
+cascading selectboxes (no path typing). The browser is sandboxed to
+`browse_root` — there is no affordance to navigate above it.
+
+```yaml
+field_profile:
+  browse_root: /data    # default; point at your DICOM share
+```
+
+If `field_profile` is absent entirely, the page defaults to `browse_root: /data`.
 
 ## `analysis_defaults.winston_lutz`
 
@@ -152,6 +182,48 @@ analysis_defaults:
     minimum_rois_seen: 3
 ```
 
+## `analysis_defaults.field_profile` (optional)
+
+Centre-wide Field Profile defaults. **Optional** — the Field Profile page is
+always available, and if this section is absent the page uses `protocol: VARIAN`
++ pylinac defaults.
+
+### Required keys (if the section is present)
+
+| Key | Type | Description |
+|-----|------|-------------|
+| `protocol` | str | One of: `VARIAN`, `SIEMENS`, `ELEKTA` |
+
+### Optional keys (fall back to pylinac defaults)
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| `centering` | str | `BEAM_CENTER` | Centering method name |
+| `in_field_ratio` | float | `0.8` | In-field ratio for analysis |
+| `penumbra` | list[float] | `[20, 80]` | `(lower, upper)` penumbra percentages |
+| `is_fff` | bool | `false` | Default FFF mode (auto-detected per image) |
+| `interpolation` | str | `LINEAR` | Interpolation method name |
+| `edge_detection_method` | str | `INFLECTION_DERIVATIVE` | Edge detection method name |
+| `vert_position` | float | `0.5` | Vertical profile position (0-1) |
+| `horiz_position` | float | `0.5` | Horizontal profile position (0-1) |
+| `vert_width` | float | `0.0` | Vertical profile width |
+| `horiz_width` | float | `0.0` | Horizontal profile width |
+| `slope_exclusion_ratio` | float | `0.2` | Slope exclusion ratio |
+| `edge_smoothing_ratio` | float | `0.003` | Edge smoothing ratio |
+| `hill_window_ratio` | float | `0.15` | Hill window ratio |
+
+No pass/fail tolerances — Field Profile reports values only. FFF is
+auto-detected per image from the DICOM Radiation Energy tag `(3002,0060)` and
+string tag scan; the Advanced-mode sidebar exposes an FFF override checkbox.
+
+```yaml
+analysis_defaults:
+  field_profile:
+    protocol: VARIAN
+    in_field_ratio: 0.8
+    penumbra: [20, 80]
+```
+
 ## `assets`
 
 | Field | Type | Required | Description |
@@ -174,10 +246,14 @@ At startup, the app validates:
 
 1. **Schema**: all required keys present, types correct (pydantic)
 2. **Module defaults**: each configured module's `analysis_defaults` section present
-   (e.g. `catphan` configured requires `analysis_defaults.catphan`)
+   (e.g. `catphan` configured requires `analysis_defaults.catphan`).
+   Note: `field_profile` is decoupled — `analysis_defaults.field_profile` is
+   optional centre-wide config (validated if present, but not required).
 3. **DICOM roots**: each machine's configured `dicom_roots.*` paths exist
 4. **Output roots**: each machine's `output_root` exists and is writable (probe-write)
 5. **Templates**: `templates/winston_lutz.xltx` defines all 25 required named cells;
-   `templates/catphan_504.xltx` defines all 19 required named cells (if CatPhan is configured)
+   `templates/catphan_504.xltx` defines all 19 required named cells (if CatPhan is configured);
+   `templates/field_profile.xltx` defines all 30 required named cells (always —
+   the FP page is always available and produces in-memory xlsx from this template)
 
 If any check fails, the app refuses to start with a clear error message.

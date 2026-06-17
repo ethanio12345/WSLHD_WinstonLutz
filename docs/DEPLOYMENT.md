@@ -132,26 +132,32 @@ analysis_defaults:
 
 **Symptom:** `Field Profile template not found: templates/field_profile.xltx`
 
-**Cause:** A machine has `field_profile` configured but the Field Profile xltx
-template hasn't been generated yet.
+**Cause:** The Field Profile xltx template hasn't been generated. The template
+is **always required** at startup (the FP page is always available and
+produces in-memory xlsx from it for browser download).
 
 **Fix:** Generate the template:
 ```bash
 uv run python scripts/build_fp_xltx_template.py
 ```
 
-### 8. Field Profile module configured without defaults
+### 8. Field Profile browse root missing
 
-**Symptom:** `field_profile module configured for machine(s) but analysis_defaults.field_profile is missing`
+**Symptom:** The Field Profile page shows
+`Field Profile browse root '/data' does not exist.`
 
-**Cause:** A machine has `field_profile` under `dicom_roots` but the
-`analysis_defaults.field_profile` section is absent from `machines.yaml`.
+**Cause:** The configured `field_profile.browse_root` (default `/data`) isn't
+mounted in the container, or the host path doesn't exist.
 
-**Fix:** Add the `field_profile` defaults section to `machines.yaml`:
+**Fix:** Verify the volume mount in `docker-compose.yml` and that the host
+directory exists, then set `field_profile.browse_root` in `machines.yaml` to
+point at the mounted DICOM share:
 ```yaml
-analysis_defaults:
-  field_profile:
-    protocol: VARIAN
+field_profile:
+  browse_root: /data    # container path to the DICOM share
+```
+```bash
+docker compose exec streamlit ls /data
 ```
 
 ### 9. Field analysis fails (field edges not detected)
@@ -160,7 +166,7 @@ analysis_defaults:
 edges...`
 
 **Cause:** The selected image is not a valid RT portal image (e.g. a CT slice
-mistakenly placed in the FieldProfile directory), or the image quality is too
+mistakenly placed in the browsed folder), or the image quality is too
 poor for edge detection.
 
 **Fix:** Switch to Advanced mode for the full traceback, verify the selected
@@ -169,6 +175,21 @@ in-field ratio in the Advanced sidebar and re-run. If the image is an FFF beam
 mislabeled as flat (no Radiation Energy tag), tick "Force FFF analysis" in the
 sidebar — note a flat-beam analysis on an FFF image may also fail; in that case
 the FFF override resolves it.
+
+### 10. Where is the Field Profile xlsx written?
+
+**Symptom:** "I ran a Field Profile analysis but can't find the xlsx on the
+output share."
+
+**Cause:** This is expected — the Field Profile page does **not** write to any
+server-side output directory. The xlsx is served straight to the user's
+browser via a download button (the result is also shown in-browser).
+
+**Fix:** None required. Click the "Download xlsx" button on the success card
+(Simple mode) or in the Advanced sidebar. The browser writes the file to the
+user's Downloads folder. The 30 named cells (the MyQA contract) are preserved
+inside the downloaded xlsx — MyQA import works as before, just delivered via
+browser instead of a server share.
 
 ## Enabling the CatPhan page
 
@@ -186,23 +207,26 @@ To enable CatPhan for a machine:
 The CatPhan output path follows the same layout as WL:
 `<machine.output_root>/CatPhan/<MACHINE>_CP_<RUNFOLDER>/`
 
-## Enabling the Field Profile page
+## The Field Profile page (always available)
 
 The Field Profile page (`pages/3_Field_Profile.py`) is auto-discovered by
-Streamlit and always appears in the sidebar. However, the machine dropdown will
-be empty unless at least one machine has `field_profile` configured.
+Streamlit and is **always available** — it is a general-purpose standalone
+tool decoupled from per-machine config. The physicist navigates to any RT
+image folder via a cascading selectbox browser rooted at
+`field_profile.browse_root` (default `/data`).
 
-To enable Field Profile for a machine:
+To customise the Field Profile page:
 
-1. Add `field_profile:` under that machine's `dicom_roots` in `machines.yaml`
-   (pointing at the directory containing RT portal image runfolders)
-2. Add the `analysis_defaults.field_profile` section (at minimum `protocol: VARIAN`)
-3. Ensure `templates/field_profile.xltx` exists (run the generator if not)
-4. Restart the container: `docker compose restart streamlit`
+1. Optionally set `field_profile.browse_root` in `machines.yaml` to point at
+   your DICOM share (default `/data` works for the standard mount)
+2. Optionally add `analysis_defaults.field_profile` to override the
+   centre-wide protocol (defaults to `protocol: VARIAN` + pylinac defaults)
+3. Ensure `templates/field_profile.xltx` exists (always required; run the
+   generator if not)
+4. Restart the container if you changed `machines.yaml`
 
-The Field Profile output path keys on the **image stem** (not the runfolder),
-since Field Analysis operates on a single DICOM:
-`<machine.output_root>/FP/<MACHINE>_FP_<IMAGE_STEM>/`
+No server-side output is written for Field Profile — the xlsx is served
+in-browser via a download button.
 
 ## Escalation paths
 
