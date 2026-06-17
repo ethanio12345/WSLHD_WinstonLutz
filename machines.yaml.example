@@ -15,6 +15,42 @@ machines:
       # field_profile: /data/LA2/FieldProfile
     output_root: /data/LA2/output      # per-machine output (WL/CatPhan/FP written as subfolders)
 
+  LA3:
+    display_name: "LA3"
+    dicom_roots:
+      winston_lutz: /data/LA3/WinstonLutz
+    output_root: /data/LA3/output
+
+  LA4:
+    display_name: "LA4"
+    dicom_roots:
+      winston_lutz: /data/LA4/WinstonLutz
+    output_root: /data/LA4/output
+
+  LA5:
+    display_name: "LA5"
+    dicom_roots:
+      winston_lutz: /data/LA5/WinstonLutz
+    output_root: /data/LA5/output
+
+  OBK:
+    display_name: "OBK (TrueBeam)"
+    dicom_roots:
+      winston_lutz: /data/OBK/WinstonLutz
+    output_root: /data/OBK/output
+
+  CST:
+    display_name: "CST"
+    dicom_roots:
+      winston_lutz: /data/CST/WinstonLutz
+    output_root: /data/CST/output
+
+  # Rainforest:
+  #   display_name: "Rainforest"
+  #   dicom_roots:
+  #     winston_lutz: /data/RAINFOREST/WinstonLutz
+  #   output_root: /data/RAINFOREST/output
+
 analysis_defaults:
   winston_lutz:
     # Required keys:

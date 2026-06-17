@@ -3,10 +3,10 @@ x-app-base: &app-base
   expose:
     - "8501"
   volumes:
-    # DICOM — matches dicom_roots.winston_lutz in machines.yaml
-    - /mnt/va_transfer_ro/LA2/DICOMRT/01 Weekly:/mnt/va_transfer_ro/LA2/DICOMRT/01 Weekly:ro
-    # Output — matches output.root in machines.yaml
-    - /mnt/va_transfer_physics_qa/05 LA2/Pylinac:/mnt/va_transfer_physics_qa/05 LA2/Pylinac:rw
+    # DICOM — top-level mount covers all machines' dicom_roots
+    - /mnt/va_transfer_ro:/mnt/va_transfer_ro:ro
+    # Output — top-level mount covers all machines' output_roots
+    - /mnt/va_transfer_physics_qa:/mnt/va_transfer_physics_qa:rw
     # Config
     - ./machines.yaml:/app/machines.yaml:ro
     # Templates (updated without rebuild)

@@ -7,7 +7,6 @@ schema. This document describes every field.
 
 ```yaml
 machines:             # map of machine key → machine config (required)
-output:               # output directory config (required)
 analysis_defaults:    # centre-wide analysis defaults (required)
 assets:               # asset paths (required)
 ```
@@ -23,11 +22,12 @@ requires:
 | `dicom_roots` | dict | yes | Module-keyed paths; at least one module required per machine |
 | `dicom_roots.winston_lutz` | str (path) | optional | Container path to the WL DICOM directory |
 | `dicom_roots.catphan` | str (path) | optional | Container path to the CatPhan DICOM directory |
-| `dicom_roots.field_profile` | str (path) | optional | Container path to the Field Profile DICOM directory |
+| `output_root` | str (path) | yes | Per-machine output directory for WL/CatPhan session folders (must exist and be writable) |
 
-`winston_lutz`, `catphan`, and `field_profile` are each independently optional
-per machine — a machine may have any combination. At least one module root
-must be configured per machine.
+`winston_lutz` and `catphan` are each independently optional per machine — a
+machine may have either, both, or (when future modules ship) neither. At least
+one module root must be configured per machine. Unknown keys (e.g.
+`field_profile`) pass through silently for forward compatibility.
 
 ### One machine (WL + CatPhan)
 
@@ -36,8 +36,9 @@ machines:
   LA2:
     display_name: "LA2 (TrueBeam)"
     dicom_roots:
-      winston_lutz: /data/LA2/WinstonLutz
-      catphan: /data/LA2/CatPhan
+      winston_lutz: /mnt/va_transfer_ro/05 LA2/DICOMRT/WinstonLutz
+      catphan: /mnt/va_transfer_ro/05 LA2/DICOMRT/CatPhan
+    output_root: /mnt/va_transfer_physics_qa/05 LA2/Pylinac
 ```
 
 ### Multiple machines with mixed modules
@@ -47,21 +48,19 @@ machines:
   LA2:
     display_name: "LA2 (TrueBeam)"
     dicom_roots:
-      winston_lutz: /data/LA2/WinstonLutz
-      catphan: /data/LA2/CatPhan
-      field_profile: /data/LA2/FieldProfile
+      winston_lutz: /mnt/va_transfer_ro/05 LA2/DICOMRT/WinstonLutz
+      catphan: /mnt/va_transfer_ro/05 LA2/DICOMRT/CatPhan
+    output_root: /mnt/va_transfer_physics_qa/05 LA2/Pylinac
   LA3:
     display_name: "LA3 (TrueBeam)"
     dicom_roots:
-      winston_lutz: /data/LA3/WinstonLutz   # WL only
+      winston_lutz: /mnt/va_transfer_ro/05 LA3/DICOMRT/WinstonLutz   # WL only
+    output_root: /mnt/va_transfer_physics_qa/05 LA3/Pylinac
   LA4:
     display_name: "LA4 (Edge)"
     dicom_roots:
-      catphan: /data/LA4/CatPhan             # CatPhan only
-  LA5:
-    display_name: "LA5 (TrueBeam)"
-    dicom_roots:
-      field_profile: /data/LA5/FieldProfile  # Field Profile only
+      catphan: /mnt/va_transfer_ro/05 LA4/DICOMRT/CatPhan             # CatPhan only
+    output_root: /mnt/va_transfer_physics_qa/05 LA4/Pylinac
 ```
 
 Each page's dropdown lists only machines with that module configured. The
@@ -78,9 +77,8 @@ global setting, so each machine can write to its own network share.
 | `machines.<key>.output_root` | str (path) | yes | Per-machine output directory (must exist and be writable) |
 
 The app creates `<output_root>/<MODULE>/<MACHINE>_<PREFIX>_<RUNFOLDER>/` per session.
-e.g. `/data/LA2/output/WL/LA2_WL_demo_clinical/`
-     `/data/LA2/output/CatPhan/LA2_CP_2026-06-16_monthly/`
-     `/data/LA2/output/FP/LA2_FP_6MV_10x10/`  (Field Profile keys on image stem)
+e.g. `/mnt/va_transfer_physics_qa/05 LA2/Pylinac/WL/LA2_WL_demo_clinical/`
+     `/mnt/va_transfer_physics_qa/05 LA2/Pylinac/CatPhan/LA2_CP_2026-06-16_monthly/`
 
 ## `analysis_defaults.winston_lutz`
 
@@ -154,47 +152,6 @@ analysis_defaults:
     minimum_rois_seen: 3
 ```
 
-## `analysis_defaults.field_profile`
-
-Centre-wide Field Profile defaults. **Required if any machine has
-`field_profile` configured**; absent otherwise.
-
-### Required keys
-
-| Key | Type | Description |
-|-----|------|-------------|
-| `protocol` | str | One of: `VARIAN`, `SIEMENS`, `ELEKTA` |
-
-### Optional keys (fall back to pylinac defaults)
-
-| Key | Type | Default | Description |
-|-----|------|---------|-------------|
-| `centering` | str | `BEAM_CENTER` | Centering method name |
-| `in_field_ratio` | float | `0.8` | In-field ratio for analysis |
-| `penumbra` | list[float] | `[20, 80]` | `(lower, upper)` penumbra percentages |
-| `is_fff` | bool | `false` | Default FFF mode (auto-detected per image) |
-| `interpolation` | str | `LINEAR` | Interpolation method name |
-| `edge_detection_method` | str | `INFLECTION_DERIVATIVE` | Edge detection method name |
-| `vert_position` | float | `0.5` | Vertical profile position (0-1) |
-| `horiz_position` | float | `0.5` | Horizontal profile position (0-1) |
-| `vert_width` | float | `0.0` | Vertical profile width |
-| `horiz_width` | float | `0.0` | Horizontal profile width |
-| `slope_exclusion_ratio` | float | `0.2` | Slope exclusion ratio |
-| `edge_smoothing_ratio` | float | `0.003` | Edge smoothing ratio |
-| `hill_window_ratio` | float | `0.15` | Hill window ratio |
-
-No pass/fail tolerances — Field Profile reports values only. FFF is
-auto-detected per image from the DICOM Radiation Energy tag `(3002,0060)` and
-string tag scan; the Advanced-mode sidebar exposes an FFF override checkbox.
-
-```yaml
-analysis_defaults:
-  field_profile:
-    protocol: VARIAN
-    in_field_ratio: 0.8
-    penumbra: [20, 80]
-```
-
 ## `assets`
 
 | Field | Type | Required | Description |
@@ -217,12 +174,10 @@ At startup, the app validates:
 
 1. **Schema**: all required keys present, types correct (pydantic)
 2. **Module defaults**: each configured module's `analysis_defaults` section present
-   (e.g. `catphan` configured requires `analysis_defaults.catphan`;
-   `field_profile` configured requires `analysis_defaults.field_profile`)
+   (e.g. `catphan` configured requires `analysis_defaults.catphan`)
 3. **DICOM roots**: each machine's configured `dicom_roots.*` paths exist
 4. **Output roots**: each machine's `output_root` exists and is writable (probe-write)
 5. **Templates**: `templates/winston_lutz.xltx` defines all 25 required named cells;
-   `templates/catphan_504.xltx` defines all 19 required named cells (if CatPhan is configured);
-   `templates/field_profile.xltx` defines all 30 required named cells (if Field Profile is configured)
+   `templates/catphan_504.xltx` defines all 19 required named cells (if CatPhan is configured)
 
 If any check fails, the app refuses to start with a clear error message.
