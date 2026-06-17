@@ -1,6 +1,6 @@
 # Template Updates
 
-The app uses two xltx templates that define the named cells forming the
+The app uses three xltx templates that define the named cells forming the
 app↔MyQA contract. This document describes the update procedure for each.
 
 ## Winston-Lutz template (`templates/winston_lutz.xltx`)
@@ -93,6 +93,39 @@ uv run python -c "from core.config import validate_catphan_template; from pathli
 
 The CatPhan template version stamp uses a `-cp` suffix (`2026-06-cp`) to
 distinguish it from WL's version (`2026-06`).
+
+## Field Profile template (`templates/field_profile.xltx`)
+
+### The 30 named cells
+
+| Group | Cells |
+|-------|-------|
+| Session metadata (3) | `machine_name`, `session_date`, `image_name` |
+| Protocol metrics (4) | `flatness_vertical`, `flatness_horizontal`, `symmetry_vertical`, `symmetry_horizontal` |
+| Field geometry (2) | `field_size_vertical_mm`, `field_size_horizontal_mm` |
+| Penumbra (4) | `top_penumbra_mm`, `bottom_penumbra_mm`, `left_penumbra_mm`, `right_penumbra_mm` |
+| CAX offsets (4) | `cax_to_top_mm`, `cax_to_bottom_mm`, `cax_to_left_mm`, `cax_to_right_mm` |
+| Beam center offsets (4) | `beam_center_to_top_mm`, `beam_center_to_bottom_mm`, `beam_center_to_left_mm`, `beam_center_to_right_mm` |
+| Slopes (4) | `top_slope_percent_mm`, `bottom_slope_percent_mm`, `left_slope_percent_mm`, `right_slope_percent_mm` |
+| Central ROI (4) | `central_roi_mean`, `central_roi_max`, `central_roi_min`, `central_roi_std` |
+| Version stamp (1) | `template_version` |
+
+The xlsx also contains 4 data sheets (Profiles, Penumbra, CAX Beam Center,
+ROI) populated per analysis — for a total of 5 sheets.
+
+### Update procedure
+
+Same as WL — mirror the steps above:
+
+```bash
+# Regenerate from scratch
+uv run python scripts/build_fp_xltx_template.py
+
+# Validate
+uv run python -c "from core.config import validate_fp_template; from pathlib import Path; validate_fp_template(Path('templates/field_profile.xltx')); print('OK')"
+```
+
+The Field Profile template version stamp uses a `-fp` suffix (`2026-06-fp`).
 
 ## Template drift detection
 

@@ -9,11 +9,14 @@ import pytest
 
 from core.config import (
     CATPHAN_SUMMARY_NAMES,
+    FP_SUMMARY_NAMES,
     REQUIRED_CATPHAN_TEMPLATE_NAMES,
+    REQUIRED_FP_TEMPLATE_NAMES,
     ConfigError,
     WLDefaults,
     load_config,
     validate_catphan_template,
+    validate_fp_template,
     validate_template,
 )
 
@@ -410,10 +413,10 @@ def test_nonexistent_catphan_dicom_root(tmp_path: Path) -> None:
 
 
 def test_forward_compat_unknown_module_key(tmp_path: Path) -> None:
-    """Machine with a future module key (field_profile) loads successfully."""
+    """Machine with a future module key (trajectory_log) loads successfully."""
     wl_root = tmp_path / "data" / "LA2" / "WinstonLutz"
     cp_root = tmp_path / "data" / "LA2" / "CatPhan"
-    fp_root = tmp_path / "data" / "LA2" / "FieldProfile"
+    future_root = tmp_path / "data" / "LA2" / "Future"
     config_path = _make_multi_module_yaml(
         tmp_path,
         machines={
@@ -422,7 +425,7 @@ def test_forward_compat_unknown_module_key(tmp_path: Path) -> None:
                 "dicom_roots": {
                     "winston_lutz": str(wl_root),
                     "catphan": str(cp_root),
-                    "field_profile": str(fp_root),
+                    "trajectory_log": str(future_root),
                 },
             }
         },
@@ -437,7 +440,7 @@ def test_forward_compat_unknown_module_key(tmp_path: Path) -> None:
     )
     config = load_config(config_path)
     # The unknown key passes through; the machine still has winston_lutz + catphan
-    assert "field_profile" in config.machines["LA2"].dicom_roots
+    assert "trajectory_log" in config.machines["LA2"].dicom_roots
 
 
 def test_catphan_template_validation_missing_names(tmp_path: Path) -> None:
@@ -467,3 +470,180 @@ def test_catphan_summary_names_count() -> None:
     assert len(REQUIRED_CATPHAN_TEMPLATE_NAMES) == 19
     assert "template_version" in REQUIRED_CATPHAN_TEMPLATE_NAMES
     assert "template_version" not in CATPHAN_SUMMARY_NAMES
+
+
+# ---------------------------------------------------------------------------
+# Field Profile config (machine-config MODIFIED spec — task 1.8)
+# ---------------------------------------------------------------------------
+
+_FP_DEFAULTS: dict[str, Any] = {
+    "protocol": "VARIAN",
+}
+
+
+def test_valid_config_fp_only(tmp_path: Path) -> None:
+    """Field Profile-only machine (no WL, no CatPhan) → loads."""
+    fp_root = tmp_path / "data" / "LA4" / "FieldProfile"
+    config_path = _make_multi_module_yaml(
+        tmp_path,
+        machines={
+            "LA4": {
+                "display_name": "LA4",
+                "dicom_roots": {"field_profile": str(fp_root)},
+            }
+        },
+        analysis_defaults={"field_profile": _FP_DEFAULTS},
+    )
+    config = load_config(config_path)
+    assert config.has_field_profile()
+    assert not config.has_winston_lutz()
+    assert not config.has_catphan()
+    assert config.fp_defaults.protocol == "VARIAN"
+
+
+def test_valid_config_all_three_modules(tmp_path: Path) -> None:
+    """Machine with WL + CatPhan + Field Profile → loads with all defaults."""
+    wl_root = tmp_path / "data" / "LA2" / "WinstonLutz"
+    cp_root = tmp_path / "data" / "LA2" / "CatPhan"
+    fp_root = tmp_path / "data" / "LA2" / "FieldProfile"
+    config_path = _make_multi_module_yaml(
+        tmp_path,
+        machines={
+            "LA2": {
+                "display_name": "LA2 (TrueBeam)",
+                "dicom_roots": {
+                    "winston_lutz": str(wl_root),
+                    "catphan": str(cp_root),
+                    "field_profile": str(fp_root),
+                },
+            }
+        },
+        analysis_defaults={
+            "winston_lutz": {
+                "bb_size_mm": 5.0,
+                "machine_scale": "VARIAN_IEC",
+                "tolerance_mm": 1.0,
+            },
+            "catphan": _CP_DEFAULTS,
+            "field_profile": _FP_DEFAULTS,
+        },
+    )
+    config = load_config(config_path)
+    assert config.has_winston_lutz()
+    assert config.has_catphan()
+    assert config.has_field_profile()
+    assert config.machine_keys_for_module("field_profile") == ["LA2"]
+
+
+def test_fp_without_defaults_rejected(tmp_path: Path) -> None:
+    """Machine with field_profile but analysis_defaults.field_profile missing → ConfigError."""
+    fp_root = tmp_path / "data" / "LA2" / "FieldProfile"
+    config_path = _make_multi_module_yaml(
+        tmp_path,
+        machines={
+            "LA2": {
+                "display_name": "LA2",
+                "dicom_roots": {"field_profile": str(fp_root)},
+            }
+        },
+        analysis_defaults={},
+    )
+    with pytest.raises(ConfigError, match="field_profile module configured"):
+        load_config(config_path)
+
+
+def test_nonexistent_fp_dicom_root(tmp_path: Path) -> None:
+    """Field Profile root that doesn't exist → ConfigError."""
+    fp_root = tmp_path / "data" / "LA2" / "FieldProfile"
+    config_path = _make_multi_module_yaml(
+        tmp_path,
+        machines={
+            "LA2": {
+                "display_name": "LA2",
+                "dicom_roots": {"field_profile": str(fp_root)},
+            }
+        },
+        analysis_defaults={"field_profile": _FP_DEFAULTS},
+    )
+    # _make_multi_module_yaml creates the dir, so remove it
+    fp_root.rmdir()
+    with pytest.raises(ConfigError, match=r"DICOM root .* does not exist"):
+        load_config(config_path)
+
+
+def test_fp_defaults_optional_keys_use_defaults(tmp_path: Path) -> None:
+    """Field Profile defaults with only protocol → optional keys fall back."""
+    fp_root = tmp_path / "data" / "LA2" / "FieldProfile"
+    config_path = _make_multi_module_yaml(
+        tmp_path,
+        machines={
+            "LA2": {
+                "display_name": "LA2",
+                "dicom_roots": {"field_profile": str(fp_root)},
+            }
+        },
+        analysis_defaults={"field_profile": {"protocol": "VARIAN"}},
+    )
+    config = load_config(config_path)
+    fp = config.fp_defaults
+    assert fp.protocol == "VARIAN"
+    assert fp.centering == "BEAM_CENTER"
+    assert fp.in_field_ratio == 0.8
+    assert fp.penumbra == [20.0, 80.0]
+    assert fp.is_fff is False
+    assert fp.interpolation == "LINEAR"
+    assert fp.edge_detection_method == "INFLECTION_DERIVATIVE"
+
+
+def test_fp_defaults_invalid_protocol(tmp_path: Path) -> None:
+    """Field Profile defaults with invalid protocol → ConfigError."""
+    fp_root = tmp_path / "data" / "LA2" / "FieldProfile"
+    config_path = _make_multi_module_yaml(
+        tmp_path,
+        machines={
+            "LA2": {
+                "display_name": "LA2",
+                "dicom_roots": {"field_profile": str(fp_root)},
+            }
+        },
+        analysis_defaults={"field_profile": {"protocol": "INVALID"}},
+    )
+    with pytest.raises(ConfigError, match="validation failed"):
+        load_config(config_path)
+
+
+def test_fp_defaults_rejects_extra_keys() -> None:
+    """FieldProfileDefaults uses extra='forbid' — unknown keys raise."""
+    from core.config import FieldProfileDefaults
+
+    with pytest.raises(Exception):  # noqa: B017 — pydantic ValidationError
+        FieldProfileDefaults(protocol="VARIAN", bogus_key=True)
+
+
+def test_fp_summary_names_count() -> None:
+    """Sanity: exactly 29 metric named cells + 30th template_version."""
+    assert len(FP_SUMMARY_NAMES) == 29
+    assert len(REQUIRED_FP_TEMPLATE_NAMES) == 30
+    assert "template_version" in REQUIRED_FP_TEMPLATE_NAMES
+    assert "template_version" not in FP_SUMMARY_NAMES
+
+
+def test_fp_template_validation_missing_names(tmp_path: Path) -> None:
+    """Field Profile template missing defined names → ConfigError."""
+    from openpyxl import Workbook
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Summary"
+    ws["A1"] = "incomplete field profile template"
+    template_path = tmp_path / "bad_fp.xltx"
+    wb.save(str(template_path))
+
+    with pytest.raises(ConfigError, match="Field Profile template missing required defined names"):
+        validate_fp_template(template_path)
+
+
+def test_fp_template_file_not_found(tmp_path: Path) -> None:
+    """Nonexistent Field Profile template → ConfigError."""
+    with pytest.raises(ConfigError, match="Field Profile template not found"):
+        validate_fp_template(tmp_path / "ghost_fp.xltx")

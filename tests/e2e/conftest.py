@@ -9,6 +9,7 @@ Manages:
 
 from __future__ import annotations
 
+import shutil
 import socket
 import time
 import warnings
@@ -94,9 +95,22 @@ def catphan_runfolder(tmp_path_factory: pytest.TempPathFactory) -> Path:
 
 
 @pytest.fixture(scope="session")
+def field_profile_runfolder(tmp_path_factory: pytest.TempPathFactory) -> Path:
+    """Write the pylinac FieldAnalysis demo DICOM for testing."""
+    from pylinac.core.io import retrieve_demo_file
+
+    src = Path(retrieve_demo_file(name="flatsym_demo.dcm"))
+    runfolder = tmp_path_factory.mktemp("fp_data") / "LA2" / "FieldProfile" / "2026-06-16_monthly"
+    runfolder.mkdir(parents=True)
+    shutil.copy(str(src), str(runfolder / "flatsym_demo.dcm"))
+    return runfolder
+
+
+@pytest.fixture(scope="session")
 def test_config(
     wl_runfolder: Path,
     catphan_runfolder: Path,
+    field_profile_runfolder: Path,
     tmp_path_factory: pytest.TempPathFactory,
 ) -> dict[str, Any]:
     """Build a machines.yaml config dict pointing at test data."""
@@ -108,6 +122,7 @@ def test_config(
                 "dicom_roots": {
                     "winston_lutz": str(wl_runfolder.parent),
                     "catphan": str(catphan_runfolder.parent),
+                    "field_profile": str(field_profile_runfolder.parent),
                 },
                 "output_root": str(output_root),
             }
@@ -122,6 +137,9 @@ def test_config(
                 "hu_tolerance": 40,
                 "scaling_tolerance": 0.5,
                 "slice_thickness_tolerance": 0.5,
+            },
+            "field_profile": {
+                "protocol": "VARIAN",
             },
         },
         "assets": {
@@ -272,6 +290,15 @@ def wl_page(page: Page) -> Page:
 def catphan_page(page: Page) -> Page:
     """Navigate to the CatPhan page via sidebar."""
     _click_sidebar_nav(page, "CatPhan")
+    page.wait_for_load_state("networkidle")
+    time.sleep(3)
+    return page
+
+
+@pytest.fixture
+def field_profile_page(page: Page) -> Page:
+    """Navigate to the Field Profile page via sidebar."""
+    _click_sidebar_nav(page, "Field Profile")
     page.wait_for_load_state("networkidle")
     time.sleep(3)
     return page

@@ -9,15 +9,19 @@ Public API:
     - :class:`OutputConfig`
     - :class:`WLDefaults`
     - :class:`CatPhanDefaults`
+    - :class:`FieldProfileDefaults`
     - :class:`AssetsConfig`
     - :class:`AppConfig`
     - :func:`load_config`
     - :func:`validate_template`
     - :func:`validate_catphan_template`
+    - :func:`validate_fp_template`
     - :data:`REQUIRED_TEMPLATE_NAMES`
     - :data:`REQUIRED_CATPHAN_TEMPLATE_NAMES`
+    - :data:`REQUIRED_FP_TEMPLATE_NAMES`
     - :data:`WL_METRIC_NAMES`
     - :data:`CATPHAN_SUMMARY_NAMES`
+    - :data:`FP_SUMMARY_NAMES`
 """
 
 from __future__ import annotations
@@ -114,9 +118,71 @@ CATPHAN_SUMMARY_NAMES: tuple[str, ...] = (
 #: All 19 required defined names in the CatPhan template (18 metrics + version stamp).
 REQUIRED_CATPHAN_TEMPLATE_NAMES: tuple[str, ...] = (*CATPHAN_SUMMARY_NAMES, "template_version")
 
+# ---------------------------------------------------------------------------
+# Constants — the 30 named cells for the Field Profile xlsx (the app↔MyQA contract)
+# ---------------------------------------------------------------------------
+
+# Session metadata (3)
+_FP_META_NAMES = ["machine_name", "session_date", "image_name"]
+# Protocol metrics (4)
+_FP_PROTOCOL_NAMES = [
+    "flatness_vertical",
+    "flatness_horizontal",
+    "symmetry_vertical",
+    "symmetry_horizontal",
+]
+# Field geometry (2)
+_FP_GEOMETRY_NAMES = ["field_size_vertical_mm", "field_size_horizontal_mm"]
+# Penumbra (4)
+_FP_PENUMBRA_NAMES = [
+    "top_penumbra_mm",
+    "bottom_penumbra_mm",
+    "left_penumbra_mm",
+    "right_penumbra_mm",
+]
+# CAX offsets (4)
+_FP_CAX_NAMES = [
+    "cax_to_top_mm",
+    "cax_to_bottom_mm",
+    "cax_to_left_mm",
+    "cax_to_right_mm",
+]
+# Beam center offsets (4)
+_FP_BEAM_CENTER_NAMES = [
+    "beam_center_to_top_mm",
+    "beam_center_to_bottom_mm",
+    "beam_center_to_left_mm",
+    "beam_center_to_right_mm",
+]
+# Slopes (4)
+_FP_SLOPE_NAMES = [
+    "top_slope_percent_mm",
+    "bottom_slope_percent_mm",
+    "left_slope_percent_mm",
+    "right_slope_percent_mm",
+]
+# Central ROI (4)
+_FP_ROI_NAMES = ["central_roi_mean", "central_roi_max", "central_roi_min", "central_roi_std"]
+
+#: The 29 metric named cells written to the Field Profile xltx summary sheet
+#: (excludes ``template_version`` which is the 30th).
+FP_SUMMARY_NAMES: tuple[str, ...] = (
+    *_FP_META_NAMES,
+    *_FP_PROTOCOL_NAMES,
+    *_FP_GEOMETRY_NAMES,
+    *_FP_PENUMBRA_NAMES,
+    *_FP_CAX_NAMES,
+    *_FP_BEAM_CENTER_NAMES,
+    *_FP_SLOPE_NAMES,
+    *_FP_ROI_NAMES,
+)
+
+#: All 30 required defined names in the Field Profile template
+#: (29 metrics + version stamp).
+REQUIRED_FP_TEMPLATE_NAMES: tuple[str, ...] = (*FP_SUMMARY_NAMES, "template_version")
+
 #: Module keys the app currently knows about (for validation).
-#: Unknown keys (e.g. ``field_profile``) pass through silently for forward compat.
-_KNOWN_MODULE_KEYS: set[str] = {"winston_lutz", "catphan"}
+_KNOWN_MODULE_KEYS: set[str] = {"winston_lutz", "catphan", "field_profile"}
 
 
 # ---------------------------------------------------------------------------
@@ -227,6 +293,49 @@ class CatPhanDefaults(BaseModel):
     minimum_rois_seen: int = 3
 
 
+#: Allowed protocol values for :class:`FieldProfileDefaults`.
+_FP_PROTOCOLS: tuple[str, ...] = ("VARIAN", "SIEMENS", "ELEKTA")
+
+
+class FieldProfileDefaults(BaseModel):
+    """Centre-wide Field Profile analysis defaults from ``machines.yaml``.
+
+    Required key: ``protocol`` (one of ``VARIAN``, ``SIEMENS``, ``ELEKTA``).
+    All other pylinac ``FieldAnalysis.analyze()`` parameters are optional and
+    fall back to pylinac defaults if absent. No pass/fail tolerances — field
+    profile QA reports values only.
+
+    The ``is_fff`` key is the default for non-auto-detected cases; per-image
+    auto-detection in :mod:`core.fp_runner` overrides it.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    # Required
+    protocol: str
+    # Optional (fall back to pylinac defaults if absent)
+    centering: str = "BEAM_CENTER"
+    in_field_ratio: float = 0.8
+    penumbra: list[float] = Field(default_factory=lambda: [20.0, 80.0])
+    is_fff: bool = False
+    interpolation: str = "LINEAR"
+    edge_detection_method: str = "INFLECTION_DERIVATIVE"
+    vert_position: float = 0.5
+    horiz_position: float = 0.5
+    vert_width: float = 0.0
+    horiz_width: float = 0.0
+    slope_exclusion_ratio: float = 0.2
+    edge_smoothing_ratio: float = 0.003
+    hill_window_ratio: float = 0.15
+
+    @field_validator("protocol")
+    @classmethod
+    def _validate_protocol(cls, v: str) -> str:
+        if v not in _FP_PROTOCOLS:
+            raise ValueError(f"protocol must be one of {_FP_PROTOCOLS}, got '{v}'")
+        return v
+
+
 class AppConfig(BaseModel):
     """Top-level application configuration (the parsed ``machines.yaml``)."""
 
@@ -268,6 +377,15 @@ class AppConfig(BaseModel):
                 )
             CatPhanDefaults(**cp_section)  # validate the sub-section
 
+        if "field_profile" in configured_modules:
+            fp_section = self.analysis_defaults.get("field_profile")
+            if fp_section is None:
+                raise ValueError(
+                    "field_profile module configured for machine(s) but "
+                    "analysis_defaults.field_profile is missing"
+                )
+            FieldProfileDefaults(**fp_section)  # validate the sub-section
+
         return self
 
     @property
@@ -280,6 +398,11 @@ class AppConfig(BaseModel):
         """Convenience accessor for the centre-wide CatPhan defaults."""
         return CatPhanDefaults(**self.analysis_defaults["catphan"])
 
+    @property
+    def fp_defaults(self) -> FieldProfileDefaults:
+        """Convenience accessor for the centre-wide Field Profile defaults."""
+        return FieldProfileDefaults(**self.analysis_defaults["field_profile"])
+
     def has_catphan(self) -> bool:
         """Return True if any machine has ``catphan`` configured."""
         return any("catphan" in m.dicom_roots for m in self.machines.values())
@@ -287,6 +410,10 @@ class AppConfig(BaseModel):
     def has_winston_lutz(self) -> bool:
         """Return True if any machine has ``winston_lutz`` configured."""
         return any("winston_lutz" in m.dicom_roots for m in self.machines.values())
+
+    def has_field_profile(self) -> bool:
+        """Return True if any machine has ``field_profile`` configured."""
+        return any("field_profile" in m.dicom_roots for m in self.machines.values())
 
     def machine_keys_for_module(self, module_key: str) -> list[str]:
         """Return sorted machine keys that have ``module_key`` configured.
@@ -441,6 +568,33 @@ def validate_catphan_template(template_path: Path) -> None:
         )
 
 
+def validate_fp_template(template_path: Path) -> None:
+    """Verify the Field Profile xltx template defines all 30 required named cells.
+
+    Args:
+        template_path: Path to ``templates/field_profile.xltx``.
+
+    Raises:
+        ConfigError: If the template cannot be loaded or is missing names.
+    """
+    from openpyxl import load_workbook
+
+    if not template_path.exists():
+        raise ConfigError(f"Field Profile template not found: {template_path}")
+
+    try:
+        wb = load_workbook(str(template_path))
+    except Exception as exc:
+        raise ConfigError(f"Cannot load Field Profile template {template_path}: {exc}") from exc
+
+    defined = set(wb.defined_names)
+    missing = [n for n in REQUIRED_FP_TEMPLATE_NAMES if n not in defined]
+    if missing:
+        raise ConfigError(
+            "Field Profile template missing required defined names: " + ", ".join(sorted(missing))
+        )
+
+
 def configure_logging() -> None:
     """Configure stdout logging (Docker convention — captured by ``docker logs``)."""
     logging.basicConfig(
@@ -452,18 +606,22 @@ def configure_logging() -> None:
 
 __all__ = [
     "CATPHAN_SUMMARY_NAMES",
+    "FP_SUMMARY_NAMES",
     "REQUIRED_CATPHAN_TEMPLATE_NAMES",
+    "REQUIRED_FP_TEMPLATE_NAMES",
     "REQUIRED_TEMPLATE_NAMES",
     "WL_METRIC_NAMES",
     "AppConfig",
     "AssetsConfig",
     "CatPhanDefaults",
     "ConfigError",
+    "FieldProfileDefaults",
     "MachineConfig",
     "MachineScale",
     "WLDefaults",
     "configure_logging",
     "load_config",
     "validate_catphan_template",
+    "validate_fp_template",
     "validate_template",
 ]
