@@ -1,12 +1,17 @@
-"""Tests for ``core/fp_excel_writer.py`` — the Field Profile Excel output.
+"""Tests for ``core/fp_excel_writer.py`` — the Field Profile in-memory xlsx bytes.
 
 Mirrors :mod:`tests.test_cbct_excel_writer`. Uses pylinac's ``flatsym_demo.dcm``
-for a real analysis result, then verifies the written xlsx structure against
-the ``fp-result-export`` spec.
+for a real analysis result, then verifies the produced xlsx bytes against the
+revised ``fp-result-export`` spec (in-memory bytes, no server-side writes).
+
+Covers the ``generalize-field-profile-browser`` change: the writer now returns
+``bytes`` (consumed by ``st.download_button``) instead of writing a paired
+``.xltx``/``.xlsx`` to a session folder.
 """
 
 from __future__ import annotations
 
+import io
 import shutil
 import warnings
 from pathlib import Path
@@ -15,7 +20,7 @@ import pytest
 from openpyxl import load_workbook
 
 from core.config import FP_SUMMARY_NAMES, REQUIRED_FP_TEMPLATE_NAMES
-from core.fp_excel_writer import TEMPLATE_VERSION, write_fp_session_output
+from core.fp_excel_writer import TEMPLATE_VERSION, build_fp_xlsx_bytes
 from core.result_types import FieldAnalysisResult
 
 # ---------------------------------------------------------------------------
@@ -50,51 +55,67 @@ def fp_result(fp_demo_image: Path) -> FieldAnalysisResult:
 
 
 @pytest.fixture(scope="module")
-def written_xlsx(
+def fp_template_path() -> Path:
+    """Path to the committed Field Profile xltx template."""
+    return Path(__file__).resolve().parents[1] / "templates" / "field_profile.xltx"
+
+
+@pytest.fixture(scope="module")
+def fp_xlsx_bytes(
     fp_result: FieldAnalysisResult,
-    tmp_path_factory: pytest.TempPathFactory,
-) -> Path:
-    """Write the FP session output once and return the xlsx path."""
-    output_root = tmp_path_factory.mktemp("fp_output")
-    template_path = Path(__file__).resolve().parents[1] / "templates" / "field_profile.xltx"
-    return write_fp_session_output(
-        result=fp_result,
-        output_root=output_root,
-        template_path=template_path,
-    )
+    fp_template_path: Path,
+) -> bytes:
+    """Build the FP xlsx bytes once and return them."""
+    return build_fp_xlsx_bytes(result=fp_result, template_path=fp_template_path)
+
+
+def _load_from_bytes(xlsx_bytes: bytes):
+    """Helper: load an openpyxl workbook from in-memory bytes."""
+    return load_workbook(io.BytesIO(xlsx_bytes))
 
 
 # ---------------------------------------------------------------------------
-# Paired xltx/xlsx output
+# build_fp_xlsx_bytes — return type + no-disk-write contract
 # ---------------------------------------------------------------------------
 
 
-def test_session_folder_created(written_xlsx: Path) -> None:
-    """Session folder at <output_root>/FP/LA2_FP_<image_stem>/."""
-    session_dir = written_xlsx.parent
-    assert session_dir.name == "LA2_FP_flatsym_demo"
-    assert session_dir.parent.name == "FP"
+def test_build_fp_xlsx_bytes_returns_bytes(fp_xlsx_bytes: bytes) -> None:
+    """build_fp_xlsx_bytes returns bytes (not a path)."""
+    assert isinstance(fp_xlsx_bytes, bytes)
+    assert len(fp_xlsx_bytes) > 0
 
 
-def test_paired_xltx_exists(written_xlsx: Path) -> None:
-    """The .xltx template copy exists alongside the .xlsx."""
-    xltx = written_xlsx.with_suffix(".xltx")
-    assert xltx.exists(), f"Paired xltx missing: {xltx}"
+def test_build_fp_xlsx_bytes_no_disk_write(
+    fp_result: FieldAnalysisResult,
+    fp_template_path: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """build_fp_xlsx_bytes must NOT write any file to disk.
 
+    We patch ``openpyxl.Workbook.save`` to fail if it's given a path (rather
+    than a file-like object) and confirm the function still completes.
+    """
+    # The function should only ever save to a BytesIO; any path-based save
+    # would indicate a regression to the old session-folder behaviour.
+    import openpyxl
 
-def test_xlsx_exists(written_xlsx: Path) -> None:
-    """The .xlsx file exists with the expected name."""
-    assert written_xlsx.exists()
-    assert written_xlsx.name == "LA2_FP_flatsym_demo.xlsx"
+    original_save = openpyxl.Workbook.save
 
+    def guarding_save(self, path_or_buffer):  # type: ignore[no-untyped-def]
+        # openpyxl detects file-like objects vs paths. We only allow file-like.
+        if not hasattr(path_or_buffer, "write"):
+            raise AssertionError(
+                f"build_fp_xlsx_bytes tried to save to a path: {path_or_buffer!r} "
+                "(should save to io.BytesIO only)"
+            )
+        return original_save(self, path_or_buffer)
 
-def test_output_path_layout(written_xlsx: Path) -> None:
-    """Full path layout matches <output>/FP/LA2_FP_flatsym_demo/LA2_FP_flatsym_demo.xlsx."""
-    parts = written_xlsx.parts
-    # parts[-1] = xlsx filename, parts[-2] = session folder, parts[-3] = FP module dir
-    assert parts[-3] == "FP"
-    assert parts[-2] == "LA2_FP_flatsym_demo"
-    assert parts[-1] == "LA2_FP_flatsym_demo.xlsx"
+    monkeypatch.setattr(openpyxl.Workbook, "save", guarding_save)
+    # Should complete without raising
+    xlsx_bytes = build_fp_xlsx_bytes(result=fp_result, template_path=fp_template_path)
+    assert isinstance(xlsx_bytes, bytes)
+    assert len(xlsx_bytes) > 0
 
 
 # ---------------------------------------------------------------------------
@@ -102,17 +123,17 @@ def test_output_path_layout(written_xlsx: Path) -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_all_30_named_cells_defined(written_xlsx: Path) -> None:
+def test_all_30_named_cells_defined(fp_xlsx_bytes: bytes) -> None:
     """Every one of the 30 required defined names resolves in the workbook."""
-    wb = load_workbook(str(written_xlsx))
+    wb = _load_from_bytes(fp_xlsx_bytes)
     defined = set(wb.defined_names)
     for name in REQUIRED_FP_TEMPLATE_NAMES:
         assert name in defined, f"Defined name missing: {name}"
 
 
-def test_29_metric_named_cells_populated(written_xlsx: Path) -> None:
+def test_29_metric_named_cells_populated(fp_xlsx_bytes: bytes) -> None:
     """Every one of the 29 metric named cells resolves to a non-empty cell."""
-    wb = load_workbook(str(written_xlsx))
+    wb = _load_from_bytes(fp_xlsx_bytes)
     for name in FP_SUMMARY_NAMES:
         dn = wb.defined_names[name]
         for sheet_title, coord in dn.destinations:
@@ -120,9 +141,9 @@ def test_29_metric_named_cells_populated(written_xlsx: Path) -> None:
             assert cell.value is not None, f"Named cell '{name}' is empty"
 
 
-def test_template_version_stamped(written_xlsx: Path) -> None:
+def test_template_version_stamped(fp_xlsx_bytes: bytes) -> None:
     """The template_version named cell contains the version string."""
-    wb = load_workbook(str(written_xlsx))
+    wb = _load_from_bytes(fp_xlsx_bytes)
     dn = wb.defined_names["template_version"]
     for sheet_title, coord in dn.destinations:
         cell = wb[sheet_title][coord]
@@ -134,34 +155,34 @@ def test_template_version_stamped(written_xlsx: Path) -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_sheet_count_is_5(written_xlsx: Path) -> None:
+def test_sheet_count_is_5(fp_xlsx_bytes: bytes) -> None:
     """The xlsx contains exactly 5 sheets: Summary + 4 data sheets."""
-    wb = load_workbook(str(written_xlsx))
+    wb = _load_from_bytes(fp_xlsx_bytes)
     expected = {"Summary", "Profiles", "Penumbra", "CAX Beam Center", "ROI"}
     assert set(wb.sheetnames) == expected
     assert len(wb.sheetnames) == 5
 
 
-def test_profiles_sheet_has_vertical_and_horizontal(written_xlsx: Path) -> None:
+def test_profiles_sheet_has_vertical_and_horizontal(fp_xlsx_bytes: bytes) -> None:
     """The Profiles sheet contains both vertical and horizontal profile data."""
-    wb = load_workbook(str(written_xlsx))
+    wb = _load_from_bytes(fp_xlsx_bytes)
     ws = wb["Profiles"]
     axes = {ws.cell(row=r, column=1).value for r in range(2, ws.max_row + 1)}
     assert "vertical" in axes
     assert "horizontal" in axes
 
 
-def test_penumbra_sheet_has_4_sides(written_xlsx: Path) -> None:
+def test_penumbra_sheet_has_4_sides(fp_xlsx_bytes: bytes) -> None:
     """The Penumbra sheet has 4 data rows (Top, Bottom, Left, Right)."""
-    wb = load_workbook(str(written_xlsx))
+    wb = _load_from_bytes(fp_xlsx_bytes)
     ws = wb["Penumbra"]
     sides = {ws.cell(row=r, column=1).value for r in range(2, ws.max_row + 1)}
     assert sides == {"Top", "Bottom", "Left", "Right"}
 
 
-def test_cax_beam_center_sheet_content(written_xlsx: Path) -> None:
+def test_cax_beam_center_sheet_content(fp_xlsx_bytes: bytes) -> None:
     """The CAX Beam Center sheet has the three metric rows."""
-    wb = load_workbook(str(written_xlsx))
+    wb = _load_from_bytes(fp_xlsx_bytes)
     ws = wb["CAX Beam Center"]
     metrics = {ws.cell(row=r, column=1).value for r in range(2, ws.max_row + 1)}
     assert "CAX offset (mm)" in metrics
@@ -169,36 +190,39 @@ def test_cax_beam_center_sheet_content(written_xlsx: Path) -> None:
     assert "Slope (%/mm)" in metrics
 
 
-def test_roi_sheet_has_4_stats(written_xlsx: Path) -> None:
+def test_roi_sheet_has_4_stats(fp_xlsx_bytes: bytes) -> None:
     """The ROI sheet has Mean/Max/Min/Std rows."""
-    wb = load_workbook(str(written_xlsx))
+    wb = _load_from_bytes(fp_xlsx_bytes)
     ws = wb["ROI"]
     stats = {ws.cell(row=r, column=1).value for r in range(2, ws.max_row + 1)}
     assert stats == {"Mean", "Max", "Min", "Std"}
 
 
 # ---------------------------------------------------------------------------
-# Re-run overwrites same session
+# Determinism — two calls produce equivalent bytes (same content)
 # ---------------------------------------------------------------------------
 
 
-def test_rerun_overwrites_session(
+def test_repeated_calls_produce_valid_xlsx(
     fp_result: FieldAnalysisResult,
-    tmp_path_factory: pytest.TempPathFactory,
+    fp_template_path: Path,
 ) -> None:
-    """A second write to the same session overwrites the .xlsx in place."""
-    output_root = tmp_path_factory.mktemp("fp_rerun_output")
-    template_path = Path(__file__).resolve().parents[1] / "templates" / "field_profile.xltx"
+    """Two calls to build_fp_xlsx_bytes each produce a valid xlsx (5 sheets, 30 cells)."""
+    first_bytes = build_fp_xlsx_bytes(result=fp_result, template_path=fp_template_path)
+    second_bytes = build_fp_xlsx_bytes(result=fp_result, template_path=fp_template_path)
 
-    first = write_fp_session_output(
-        result=fp_result, output_root=output_root, template_path=template_path
-    )
-
-    # Second write (simulating a re-run with different params → same image stem)
-    second = write_fp_session_output(
-        result=fp_result, output_root=output_root, template_path=template_path
-    )
-    assert second == first
-    assert second.exists()
-    # The file was overwritten (path identical)
-    assert second.parent == first.parent
+    # Both must be valid xlsx with the same structure
+    for label, b in (("first", first_bytes), ("second", second_bytes)):
+        wb = _load_from_bytes(b)
+        assert len(wb.sheetnames) == 5, f"{label} call: expected 5 sheets"
+        assert set(wb.sheetnames) == {
+            "Summary",
+            "Profiles",
+            "Penumbra",
+            "CAX Beam Center",
+            "ROI",
+        }
+        # template_version stamped
+        dn = wb.defined_names["template_version"]
+        for sheet_title, coord in dn.destinations:
+            assert wb[sheet_title][coord].value == TEMPLATE_VERSION

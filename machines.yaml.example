@@ -11,9 +11,15 @@ machines:
       winston_lutz: /data/LA2/WinstonLutz
       # CatPhan is independently optional per machine. Uncomment to enable:
       # catphan: /data/LA2/CatPhan
-      # Field Profile is independently optional per machine. Uncomment to enable:
-      # field_profile: /data/LA2/FieldProfile
-    output_root: /data/LA2/output      # per-machine output (WL/CatPhan/FP written as subfolders)
+      # Note: `field_profile` is NOT a per-machine dicom_root key (the Field
+      # Profile page is decoupled from machines — see top-level `field_profile`
+      # config below). A legacy `field_profile` entry here is silently ignored.
+    output_root: /data/LA2/output      # per-machine output (WL/CatPhan written as subfolders)
+
+# Field Profile page config (decoupled from machines). The page is always
+# available; this optional section configures the cascading folder browser root.
+field_profile:
+  browse_root: /data                   # root of the cascading folder browser (default: /data)
 
 analysis_defaults:
   winston_lutz:
@@ -47,8 +53,9 @@ analysis_defaults:
   #   # roi_size_factor: 1.0
   #   # scaling_factor: 1.0
   #   # minimum_rois_seen: 3
-  # Field Profile defaults — required iff any machine has `field_profile` configured.
-  # Uncomment together with the field_profile dicom_root above to enable the Field Profile page.
+  # Field Profile defaults — OPTIONAL centre-wide config (the page is always
+  # available; if this section is absent, the page uses protocol: VARIAN +
+  # pylinac defaults). Uncomment to customise.
   # field_profile:
   #   # Required key:
   #   protocol: VARIAN              # one of: VARIAN, SIEMENS, ELEKTA

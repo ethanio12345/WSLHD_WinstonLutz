@@ -1,43 +1,60 @@
 ## Requirement: Field profile Simple mode page
 
-The app SHALL provide a Field Profile page (`pages/3_Field_Profile.py`) with a Simple mode that allows a physicist to select a machine, runfolder, and individual DICOM image, then run analysis with one click.
+The app SHALL provide a Field Profile page (`pages/3_Field_Profile.py`) with a Simple mode that is a **general-purpose** standalone tool (decoupled from per-machine config). The physicist SHALL navigate to a folder containing RT images via a cascading selectbox browser, select an individual DICOM image, and run analysis with one click.
 
-### Scenario: Machine dropdown filtered to field_profile machines
+The page SHALL NOT require any per-machine `dicom_roots.field_profile` configuration. The page SHALL be always available (no enablement flag).
 
-- **GIVEN** machines LA2 (WL+CP+FP) and LA3 (WL only) are configured
+### Scenario: Page always available (decoupled)
+
+- **GIVEN** `machines.yaml` has NO `field_profile` anywhere in any machine's `dicom_roots`
 - **WHEN** the Field Profile page renders
-- **THEN** the machine dropdown SHALL show only LA2 (the machine with `field_profile` configured)
+- **THEN** the page SHALL render the folder browser normally (no "not configured" warning)
 
-### Scenario: No machines with field_profile
+### Scenario: field_profile dicom_root ignored (forward compat)
 
-- **GIVEN** no machines have `field_profile` in `dicom_roots`
-- **WHEN** the Field Profile page renders
-- **THEN** a warning SHALL be shown: "No machines have Field Profile configured"
+- **GIVEN** a legacy config still has `dicom_roots.field_profile` on a machine
+- **WHEN** the config loads
+- **THEN** the `field_profile` key SHALL be ignored (forward-compat), and the page SHALL still render the folder browser rooted at `field_profile.browse_root`
 
-## Requirement: Runfolder dropdown
+## Requirement: Cascading folder browser
 
-The page SHALL show a runfolder dropdown listing all immediate subdirectories of the selected machine's `field_profile` DICOM root, sorted newest-first.
+The page SHALL provide a cascading selectbox folder browser rooted at `field_profile.browse_root` (config, default `/data`). The physicist SHALL drill down folder-by-folder by clicking selectboxes; no path typing is required.
 
-### Scenario: Runfolders present
+### Scenario: Cascading selectboxes render subdirs
 
-- **GIVEN** machine LA2 with `field_profile: /data/LA2/FieldProfile`
-- **AND** subdirectories `2026-06-16_monthly` and `2026-06-01_monthly` exist
+- **GIVEN** `browse_root = /data`, with subdirs `LA2/`, `LA3/`, and `/data/LA2/FieldProfile/` exists
 - **WHEN** the page renders
-- **THEN** the runfolder dropdown SHALL list both, with the newest selected by default
+- **THEN** the first selectbox SHALL list `LA2`, `LA3` (immediate subdirs, sorted)
+- **AND WHEN** the physicist selects `LA2`
+- **THEN** a second selectbox SHALL list `FieldProfile` (and any other subdirs of `/data/LA2`)
+- **AND WHEN** the physicist selects `FieldProfile`
+- **THEN** the image dropdown SHALL populate with DICOM files in `/data/LA2/FieldProfile`
 
-### Scenario: No runfolders
+### Scenario: Browser is sandboxed to browse_root
 
-- **GIVEN** the field_profile DICOM root exists but has no subdirectories
+- **GIVEN** the browser is at `/data/LA2/FieldProfile`
+- **THEN** there SHALL be no affordance to navigate above `/data` (no `..`, no absolute-path entry)
+- **AND** the page SHALL NOT enumerate directories outside `browse_root`
+
+### Scenario: browse_root configurable
+
+- **GIVEN** `machines.yaml` sets `field_profile.browse_root: /mnt/rt_images`
 - **WHEN** the page renders
-- **THEN** an error SHALL be shown indicating no runfolders were found
+- **THEN** the first selectbox SHALL list immediate subdirs of `/mnt/rt_images`
+
+### Scenario: browse_root missing or empty
+
+- **GIVEN** `browse_root` does not exist or contains no subdirectories
+- **WHEN** the page renders
+- **THEN** an inline info message SHALL be shown (no crash)
 
 ## Requirement: Image dropdown with DICOM metadata
 
-The page SHALL show an image dropdown listing all DICOM files in the selected runfolder. Each entry SHALL display a summary built from DICOM metadata.
+The page SHALL show an image dropdown listing all DICOM files in the selected (deepest) folder. Each entry SHALL display a summary built from DICOM metadata.
 
-### Scenario: Multiple images in runfolder
+### Scenario: Multiple images in folder
 
-- **GIVEN** runfolder contains `6MV_10x10.dcm`, `6MV_FFF_10x10.dcm`, `10MV_10x10.dcm`
+- **GIVEN** the selected folder contains `6MV_10x10.dcm`, `6MV_FFF_10x10.dcm`, `10MV_10x10.dcm`
 - **WHEN** the image dropdown renders
 - **THEN** each entry SHALL show energy, RT image label, dimensions (cols×rows), pixel spacing, and filename
 - **AND** the format SHALL be e.g. `6FFF T2_OP 1024×768 0.392mm/px (6MV_FFF_10x10.dcm)`
@@ -76,12 +93,12 @@ The page SHALL auto-detect whether the selected image is a flattened or FFF beam
 
 The page SHALL provide a button labeled "Shut Up and Give Me My MyQA Results" that runs the field profile analysis on the selected image.
 
-### Scenario: Successful analysis
+### Scenario: Successful analysis (in-browser, no server write)
 
 - **GIVEN** a valid DICOM image is selected
 - **WHEN** the button is clicked
 - **THEN** the analysis SHALL run using `pylinac.FieldAnalysis` with VARIAN protocol
-- **AND** the xlsx SHALL be written to the machine's output_root
+- **AND** NO file SHALL be written to any server-side output directory
 - **AND** a success card SHALL appear showing flatness (V+H), symmetry (V+H), and field size
 
 ### Scenario: Analysis failure
@@ -93,9 +110,9 @@ The page SHALL provide a button labeled "Shut Up and Give Me My MyQA Results" th
 - **AND** the full traceback SHALL be logged via `logging.exception`
 - **AND** the error SHALL NOT be shown in the Simple mode UI
 
-## Requirement: Success card
+## Requirement: In-browser result + browser download
 
-After a successful analysis, a success card SHALL display the key metrics.
+After analysis the result SHALL be shown in-browser and a download button SHALL serve the populated xlsx straight to the user's browser (Downloads).
 
 ### Scenario: Success card content
 
@@ -107,9 +124,17 @@ After a successful analysis, a success card SHALL display the key metrics.
   - Symmetry Horizontal (%)
   - Field Size Vertical (mm)
   - Field Size Horizontal (mm)
-  - Output xlsx path
   - FFF status
-- **AND** a "View in Advanced mode" button SHALL appear
+- **AND** a "Download xlsx" button SHALL appear
+- **AND** NO server-side output path SHALL be shown (there is none)
+
+### Scenario: Download button serves xlsx bytes
+
+- **GIVEN** a successful analysis
+- **WHEN** "Download xlsx" is clicked
+- **THEN** the browser SHALL download a `<IMAGE_STEM>.xlsx` file
+- **AND** the xlsx SHALL contain the 30 named cells (the MyQA contract) + 4 data sheets
+- **AND** no file SHALL be written server-side by the download
 
 ## Requirement: Hand-off to Advanced mode
 

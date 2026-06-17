@@ -96,14 +96,32 @@ def catphan_runfolder(tmp_path_factory: pytest.TempPathFactory) -> Path:
 
 @pytest.fixture(scope="session")
 def field_profile_runfolder(tmp_path_factory: pytest.TempPathFactory) -> Path:
-    """Write the pylinac FieldAnalysis demo DICOM for testing."""
+    """Write the pylinac FieldAnalysis demo DICOM under a browse-root layout.
+
+    The FP page is decoupled from per-machine config (see
+    ``generalize-field-profile-browser`` change) — the demo DICOM lives under
+    a browse-root-relative path that the cascading folder browser navigates.
+    """
     from pylinac.core.io import retrieve_demo_file
 
     src = Path(retrieve_demo_file(name="flatsym_demo.dcm"))
-    runfolder = tmp_path_factory.mktemp("fp_data") / "LA2" / "FieldProfile" / "2026-06-16_monthly"
+    # Layout: <browse_root>/LA2/FieldProfile/2026-06-16_monthly/flatsym_demo.dcm
+    # The browse_root (parent tmp dir) is exposed via the test config's
+    # `field_profile.browse_root` key.
+    runfolder = (
+        tmp_path_factory.mktemp("fp_browse_root") / "LA2" / "FieldProfile" / "2026-06-16_monthly"
+    )
     runfolder.mkdir(parents=True)
     shutil.copy(str(src), str(runfolder / "flatsym_demo.dcm"))
     return runfolder
+
+
+@pytest.fixture(scope="session")
+def field_profile_browse_root(field_profile_runfolder: Path) -> Path:
+    """The browse_root for the FP cascading folder browser (test config)."""
+    # field_profile_runfolder = <browse_root>/LA2/FieldProfile/2026-06-16_monthly
+    # browse_root is 3 levels up.
+    return field_profile_runfolder.parents[2]
 
 
 @pytest.fixture(scope="session")
@@ -111,9 +129,16 @@ def test_config(
     wl_runfolder: Path,
     catphan_runfolder: Path,
     field_profile_runfolder: Path,
+    field_profile_browse_root: Path,
     tmp_path_factory: pytest.TempPathFactory,
 ) -> dict[str, Any]:
-    """Build a machines.yaml config dict pointing at test data."""
+    """Build a machines.yaml config dict pointing at test data.
+
+    Note: ``field_profile`` is decoupled from per-machine ``dicom_roots`` (see
+    ``generalize-field-profile-browser`` change). The test machine has only
+    ``winston_lutz`` + ``catphan`` roots; the FP page is configured via the
+    top-level ``field_profile.browse_root`` key.
+    """
     output_root = tmp_path_factory.mktemp("output")
     return {
         "machines": {
@@ -122,7 +147,6 @@ def test_config(
                 "dicom_roots": {
                     "winston_lutz": str(wl_runfolder.parent),
                     "catphan": str(catphan_runfolder.parent),
-                    "field_profile": str(field_profile_runfolder.parent),
                 },
                 "output_root": str(output_root),
             }
@@ -141,6 +165,11 @@ def test_config(
             "field_profile": {
                 "protocol": "VARIAN",
             },
+        },
+        # Field Profile page config (decoupled). Points the cascading folder
+        # browser at the browse_root containing the demo DICOM.
+        "field_profile": {
+            "browse_root": str(field_profile_browse_root),
         },
         "assets": {
             "fry_meme_path": str(Path(__file__).resolve().parents[2] / "assets" / "fry_money.png"),

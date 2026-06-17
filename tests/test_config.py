@@ -413,10 +413,15 @@ def test_nonexistent_catphan_dicom_root(tmp_path: Path) -> None:
 
 
 def test_forward_compat_unknown_module_key(tmp_path: Path) -> None:
-    """Machine with a future module key (trajectory_log) loads successfully."""
+    """Machine with future module keys (trajectory_log, legacy field_profile) loads.
+
+    Both ``trajectory_log`` (future) and ``field_profile`` (legacy — now
+    decoupled from machines) are silently ignored as ``dicom_roots`` keys.
+    """
     wl_root = tmp_path / "data" / "LA2" / "WinstonLutz"
     cp_root = tmp_path / "data" / "LA2" / "CatPhan"
     future_root = tmp_path / "data" / "LA2" / "Future"
+    legacy_fp_root = tmp_path / "data" / "LA2" / "LegacyFieldProfile"
     config_path = _make_multi_module_yaml(
         tmp_path,
         machines={
@@ -426,6 +431,8 @@ def test_forward_compat_unknown_module_key(tmp_path: Path) -> None:
                     "winston_lutz": str(wl_root),
                     "catphan": str(cp_root),
                     "trajectory_log": str(future_root),
+                    # Legacy key — silently ignored (decoupled)
+                    "field_profile": str(legacy_fp_root),
                 },
             }
         },
@@ -439,8 +446,11 @@ def test_forward_compat_unknown_module_key(tmp_path: Path) -> None:
         },
     )
     config = load_config(config_path)
-    # The unknown key passes through; the machine still has winston_lutz + catphan
+    # The unknown keys pass through; the machine still has winston_lutz + catphan
     assert "trajectory_log" in config.machines["LA2"].dicom_roots
+    assert "field_profile" in config.machines["LA2"].dicom_roots  # ignored, not rejected
+    # has_field_profile() is always True now (page always available)
+    assert config.has_field_profile()
 
 
 def test_catphan_template_validation_missing_names(tmp_path: Path) -> None:
@@ -473,7 +483,7 @@ def test_catphan_summary_names_count() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Field Profile config (machine-config MODIFIED spec — task 1.8)
+# Field Profile config (decoupled from machines — generalize-field-profile-browser)
 # ---------------------------------------------------------------------------
 
 _FP_DEFAULTS: dict[str, Any] = {
@@ -481,40 +491,86 @@ _FP_DEFAULTS: dict[str, Any] = {
 }
 
 
-def test_valid_config_fp_only(tmp_path: Path) -> None:
-    """Field Profile-only machine (no WL, no CatPhan) → loads."""
-    fp_root = tmp_path / "data" / "LA4" / "FieldProfile"
-    config_path = _make_multi_module_yaml(
+def test_has_field_profile_always_true(tmp_path: Path) -> None:
+    """has_field_profile() always returns True (page always available, decoupled)."""
+    config_path = _make_machine_yaml(tmp_path)
+    config = load_config(config_path)
+    # No field_profile dicom_root anywhere, but page is still available
+    assert config.has_field_profile() is True
+    assert not any("field_profile" in m.dicom_roots for m in config.machines.values())
+
+
+def test_fp_defaults_absent_loads_successfully(tmp_path: Path) -> None:
+    """analysis_defaults.field_profile absent → config loads; page still works.
+
+    The FP page falls back to protocol: VARIAN + pylinac defaults in this case.
+    """
+    config_path = _make_machine_yaml(tmp_path)
+    config = load_config(config_path)
+    # fp_defaults_or_none returns None when the section is absent
+    assert config.fp_defaults_or_none is None
+    # Page is still available
+    assert config.has_field_profile()
+
+
+def test_fp_defaults_present_loads(tmp_path: Path) -> None:
+    """analysis_defaults.field_profile present → fp_defaults_or_none returns it."""
+    config_path = _make_machine_yaml(
         tmp_path,
-        machines={
-            "LA4": {
-                "display_name": "LA4",
-                "dicom_roots": {"field_profile": str(fp_root)},
-            }
+        analysis_defaults={
+            "winston_lutz": {
+                "bb_size_mm": 5.0,
+                "machine_scale": "VARIAN_IEC",
+                "tolerance_mm": 1.0,
+            },
+            "field_profile": {"protocol": "SIEMENS", "in_field_ratio": 0.7},
         },
-        analysis_defaults={"field_profile": _FP_DEFAULTS},
     )
     config = load_config(config_path)
-    assert config.has_field_profile()
-    assert not config.has_winston_lutz()
-    assert not config.has_catphan()
-    assert config.fp_defaults.protocol == "VARIAN"
+    fp = config.fp_defaults_or_none
+    assert fp is not None
+    assert fp.protocol == "SIEMENS"
+    assert fp.in_field_ratio == 0.7
 
 
-def test_valid_config_all_three_modules(tmp_path: Path) -> None:
-    """Machine with WL + CatPhan + Field Profile → loads with all defaults."""
+def test_fp_defaults_invalid_protocol_rejected(tmp_path: Path) -> None:
+    """analysis_defaults.field_profile with invalid protocol → ConfigError.
+
+    Even though the section is optional, IF present it must validate.
+    """
+    config_path = _make_machine_yaml(
+        tmp_path,
+        analysis_defaults={
+            "winston_lutz": {
+                "bb_size_mm": 5.0,
+                "machine_scale": "VARIAN_IEC",
+                "tolerance_mm": 1.0,
+            },
+            "field_profile": {"protocol": "INVALID"},
+        },
+    )
+    with pytest.raises(ConfigError, match="validation failed"):
+        load_config(config_path)
+
+
+def test_legacy_fp_dicom_root_ignored(tmp_path: Path) -> None:
+    """Legacy dicom_roots.field_profile is silently ignored (forward-compat).
+
+    A machine may still have a `field_profile` entry under dicom_roots (legacy
+    config); it loads fine and the (possibly missing) directory is NOT
+    filesystem-validated, since field_profile is no longer a known module key.
+    """
     wl_root = tmp_path / "data" / "LA2" / "WinstonLutz"
-    cp_root = tmp_path / "data" / "LA2" / "CatPhan"
-    fp_root = tmp_path / "data" / "LA2" / "FieldProfile"
+    # Note: legacy_fp_root intentionally does NOT exist on disk
+    legacy_fp_root = tmp_path / "data" / "LA2" / "NonExistentLegacyFP"
     config_path = _make_multi_module_yaml(
         tmp_path,
         machines={
             "LA2": {
-                "display_name": "LA2 (TrueBeam)",
+                "display_name": "LA2",
                 "dicom_roots": {
                     "winston_lutz": str(wl_root),
-                    "catphan": str(cp_root),
-                    "field_profile": str(fp_root),
+                    "field_profile": str(legacy_fp_root),
                 },
             }
         },
@@ -523,69 +579,71 @@ def test_valid_config_all_three_modules(tmp_path: Path) -> None:
                 "bb_size_mm": 5.0,
                 "machine_scale": "VARIAN_IEC",
                 "tolerance_mm": 1.0,
-            },
-            "catphan": _CP_DEFAULTS,
-            "field_profile": _FP_DEFAULTS,
+            }
         },
     )
+    # Loads successfully — the legacy field_profile root is not validated
     config = load_config(config_path)
     assert config.has_winston_lutz()
-    assert config.has_catphan()
-    assert config.has_field_profile()
-    assert config.machine_keys_for_module("field_profile") == ["LA2"]
+    assert config.has_field_profile()  # always True now
 
 
-def test_fp_without_defaults_rejected(tmp_path: Path) -> None:
-    """Machine with field_profile but analysis_defaults.field_profile missing → ConfigError."""
-    fp_root = tmp_path / "data" / "LA2" / "FieldProfile"
-    config_path = _make_multi_module_yaml(
-        tmp_path,
-        machines={
+def test_fp_browse_root_default(tmp_path: Path) -> None:
+    """fp_browse_root defaults to /data when field_profile section is absent."""
+    config_path = _make_machine_yaml(tmp_path)
+    config = load_config(config_path)
+    assert config.fp_browse_root == "/data"
+
+
+def test_fp_browse_root_override(tmp_path: Path) -> None:
+    """field_profile.browse_root override is respected."""
+    import yaml
+
+    output_root = tmp_path / "out"
+    output_root.mkdir(parents=True, exist_ok=True)
+    wl_root = tmp_path / "dicom" / "LA2" / "WinstonLutz"
+    wl_root.mkdir(parents=True, exist_ok=True)
+
+    data = {
+        "machines": {
             "LA2": {
-                "display_name": "LA2",
-                "dicom_roots": {"field_profile": str(fp_root)},
+                "display_name": "LA2 (TrueBeam)",
+                "dicom_roots": {"winston_lutz": str(wl_root)},
+                "output_root": str(output_root),
             }
         },
-        analysis_defaults={},
-    )
-    with pytest.raises(ConfigError, match="field_profile module configured"):
-        load_config(config_path)
-
-
-def test_nonexistent_fp_dicom_root(tmp_path: Path) -> None:
-    """Field Profile root that doesn't exist → ConfigError."""
-    fp_root = tmp_path / "data" / "LA2" / "FieldProfile"
-    config_path = _make_multi_module_yaml(
-        tmp_path,
-        machines={
-            "LA2": {
-                "display_name": "LA2",
-                "dicom_roots": {"field_profile": str(fp_root)},
+        "analysis_defaults": {
+            "winston_lutz": {
+                "bb_size_mm": 5.0,
+                "machine_scale": "VARIAN_IEC",
+                "tolerance_mm": 1.0,
             }
         },
-        analysis_defaults={"field_profile": _FP_DEFAULTS},
-    )
-    # _make_multi_module_yaml creates the dir, so remove it
-    fp_root.rmdir()
-    with pytest.raises(ConfigError, match=r"DICOM root .* does not exist"):
-        load_config(config_path)
+        "assets": {"fry_meme_path": "/assets/fry.png", "logo_path": "/assets/logo.png"},
+        "field_profile": {"browse_root": "/mnt/rt_images"},
+    }
+    config_path = tmp_path / "machines.yaml"
+    config_path.write_text(yaml.dump(data), encoding="utf-8")
+    config = load_config(config_path)
+    assert config.fp_browse_root == "/mnt/rt_images"
 
 
 def test_fp_defaults_optional_keys_use_defaults(tmp_path: Path) -> None:
     """Field Profile defaults with only protocol → optional keys fall back."""
-    fp_root = tmp_path / "data" / "LA2" / "FieldProfile"
-    config_path = _make_multi_module_yaml(
+    config_path = _make_machine_yaml(
         tmp_path,
-        machines={
-            "LA2": {
-                "display_name": "LA2",
-                "dicom_roots": {"field_profile": str(fp_root)},
-            }
+        analysis_defaults={
+            "winston_lutz": {
+                "bb_size_mm": 5.0,
+                "machine_scale": "VARIAN_IEC",
+                "tolerance_mm": 1.0,
+            },
+            "field_profile": {"protocol": "VARIAN"},
         },
-        analysis_defaults={"field_profile": {"protocol": "VARIAN"}},
     )
     config = load_config(config_path)
-    fp = config.fp_defaults
+    fp = config.fp_defaults_or_none
+    assert fp is not None
     assert fp.protocol == "VARIAN"
     assert fp.centering == "BEAM_CENTER"
     assert fp.in_field_ratio == 0.8
@@ -593,23 +651,6 @@ def test_fp_defaults_optional_keys_use_defaults(tmp_path: Path) -> None:
     assert fp.is_fff is False
     assert fp.interpolation == "LINEAR"
     assert fp.edge_detection_method == "INFLECTION_DERIVATIVE"
-
-
-def test_fp_defaults_invalid_protocol(tmp_path: Path) -> None:
-    """Field Profile defaults with invalid protocol → ConfigError."""
-    fp_root = tmp_path / "data" / "LA2" / "FieldProfile"
-    config_path = _make_multi_module_yaml(
-        tmp_path,
-        machines={
-            "LA2": {
-                "display_name": "LA2",
-                "dicom_roots": {"field_profile": str(fp_root)},
-            }
-        },
-        analysis_defaults={"field_profile": {"protocol": "INVALID"}},
-    )
-    with pytest.raises(ConfigError, match="validation failed"):
-        load_config(config_path)
 
 
 def test_fp_defaults_rejects_extra_keys() -> None:

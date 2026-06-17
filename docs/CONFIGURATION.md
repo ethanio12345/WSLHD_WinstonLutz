@@ -9,6 +9,7 @@ schema. This document describes every field.
 machines:             # map of machine key → machine config (required)
 output:               # output directory config (required)
 analysis_defaults:    # centre-wide analysis defaults (required)
+field_profile:        # Field Profile page config (optional; page is always available)
 assets:               # asset paths (required)
 ```
 
@@ -23,11 +24,15 @@ requires:
 | `dicom_roots` | dict | yes | Module-keyed paths; at least one module required per machine |
 | `dicom_roots.winston_lutz` | str (path) | optional | Container path to the WL DICOM directory |
 | `dicom_roots.catphan` | str (path) | optional | Container path to the CatPhan DICOM directory |
-| `dicom_roots.field_profile` | str (path) | optional | Container path to the Field Profile DICOM directory |
 
-`winston_lutz`, `catphan`, and `field_profile` are each independently optional
-per machine — a machine may have any combination. At least one module root
-must be configured per machine.
+`winston_lutz` and `catphan` are each independently optional per machine — a
+machine may have any combination. At least one module root must be configured
+per machine.
+
+> **Note:** `field_profile` is **not** a per-machine `dicom_roots` key (the
+> Field Profile page is decoupled from machines — see
+> [`field_profile`](#field_profile-optional) below). A legacy
+> `dicom_roots.field_profile` entry is silently ignored (forward-compat).
 
 ### One machine (WL + CatPhan)
 
@@ -49,7 +54,6 @@ machines:
     dicom_roots:
       winston_lutz: /data/LA2/WinstonLutz
       catphan: /data/LA2/CatPhan
-      field_profile: /data/LA2/FieldProfile
   LA3:
     display_name: "LA3 (TrueBeam)"
     dicom_roots:
@@ -58,10 +62,6 @@ machines:
     display_name: "LA4 (Edge)"
     dicom_roots:
       catphan: /data/LA4/CatPhan             # CatPhan only
-  LA5:
-    display_name: "LA5 (TrueBeam)"
-    dicom_roots:
-      field_profile: /data/LA5/FieldProfile  # Field Profile only
 ```
 
 Each page's dropdown lists only machines with that module configured. The
@@ -80,7 +80,31 @@ global setting, so each machine can write to its own network share.
 The app creates `<output_root>/<MODULE>/<MACHINE>_<PREFIX>_<RUNFOLDER>/` per session.
 e.g. `/data/LA2/output/WL/LA2_WL_demo_clinical/`
      `/data/LA2/output/CatPhan/LA2_CP_2026-06-16_monthly/`
-     `/data/LA2/output/FP/LA2_FP_6MV_10x10/`  (Field Profile keys on image stem)
+
+> **Note:** Field Profile does **not** write to `output_root`. The FP page is
+> decoupled from per-machine output and serves results in-browser via a
+> download button (see [`field_profile`](#field_profile-optional) below).
+
+## `field_profile` (optional)
+
+The Field Profile page is a **general-purpose standalone tool** decoupled from
+per-machine config. It is always available; this optional top-level section
+configures the cascading folder browser.
+
+| Field | Type | Required | Default | Description |
+|-------|------|----------|---------|-------------|
+| `field_profile.browse_root` | str (path) | no | `/data` | Root of the cascading folder browser |
+
+The physicist navigates to any RT image folder by drilling down through
+cascading selectboxes (no path typing). The browser is sandboxed to
+`browse_root` — there is no affordance to navigate above it.
+
+```yaml
+field_profile:
+  browse_root: /data    # default; point at your DICOM share
+```
+
+If `field_profile` is absent entirely, the page defaults to `browse_root: /data`.
 
 ## `analysis_defaults.winston_lutz`
 
@@ -154,12 +178,13 @@ analysis_defaults:
     minimum_rois_seen: 3
 ```
 
-## `analysis_defaults.field_profile`
+## `analysis_defaults.field_profile` (optional)
 
-Centre-wide Field Profile defaults. **Required if any machine has
-`field_profile` configured**; absent otherwise.
+Centre-wide Field Profile defaults. **Optional** — the Field Profile page is
+always available, and if this section is absent the page uses `protocol: VARIAN`
++ pylinac defaults.
 
-### Required keys
+### Required keys (if the section is present)
 
 | Key | Type | Description |
 |-----|------|-------------|
@@ -217,12 +242,14 @@ At startup, the app validates:
 
 1. **Schema**: all required keys present, types correct (pydantic)
 2. **Module defaults**: each configured module's `analysis_defaults` section present
-   (e.g. `catphan` configured requires `analysis_defaults.catphan`;
-   `field_profile` configured requires `analysis_defaults.field_profile`)
+   (e.g. `catphan` configured requires `analysis_defaults.catphan`).
+   Note: `field_profile` is decoupled — `analysis_defaults.field_profile` is
+   optional centre-wide config (validated if present, but not required).
 3. **DICOM roots**: each machine's configured `dicom_roots.*` paths exist
 4. **Output roots**: each machine's `output_root` exists and is writable (probe-write)
 5. **Templates**: `templates/winston_lutz.xltx` defines all 25 required named cells;
    `templates/catphan_504.xltx` defines all 19 required named cells (if CatPhan is configured);
-   `templates/field_profile.xltx` defines all 30 required named cells (if Field Profile is configured)
+   `templates/field_profile.xltx` defines all 30 required named cells (always —
+   the FP page is always available and produces in-memory xlsx from this template)
 
 If any check fails, the app refuses to start with a clear error message.
